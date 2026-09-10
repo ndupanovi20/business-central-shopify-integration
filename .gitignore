@@ -1,0 +1,18 @@
+# Business Central / AL generated files
+.alpackages/
+.snapshots/
+*.app
+
+# VS Code local configuration
+.vscode/
+
+# Temporary / OS files
+*.tmp
+*.log
+Thumbs.db
+.DS_Store
+
+# Local or secret configuration
+.env
+.env.*
+secrets.*
