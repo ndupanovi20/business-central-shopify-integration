@@ -219,52 +219,21 @@ codeunit 50120 "Shopify Product Sync"
     procedure ExecuteFullSync(
         var Item: Record Item)
     var
-        ShopifySetup:
-            Record "Shopify Integration Setup";
-
         Mapping:
             Record "Shopify Product Mapping";
 
         ShopifyClient:
             Codeunit "Shopify Client";
 
-        ShopifyInventorySync:
-            Codeunit "Shopify Inventory Sync";
-
-        ItemForInventory:
-            Record Item;
+        LocationMgt:
+            Codeunit "Shopify Location Mgt.";
 
         ProductId: Text;
         VariantId: Text;
         InventoryItemId: Text;
-
-        InventoryAtLocation: Decimal;
     begin
         ValidateItem(
             Item);
-
-        if not ShopifySetup.Get('SETUP') then
-            Error(
-                'Shopify Integration Setup does not exist.');
-
-        ShopifySetup.TestField(
-            "BC Location Code");
-
-        ShopifySetup.TestField(
-            "Shopify Location ID");
-
-        ItemForInventory.Get(
-            Item."No.");
-
-        ItemForInventory.SetRange(
-            "Location Filter",
-            ShopifySetup."BC Location Code");
-
-        ItemForInventory.CalcFields(
-            Inventory);
-
-        InventoryAtLocation :=
-            ItemForInventory.Inventory;
 
         if Mapping.Get(Item."No.") then begin
             Mapping.TestField(
@@ -320,10 +289,9 @@ codeunit 50120 "Shopify Product Sync"
             ProductId,
             VariantId);
 
-        ShopifyInventorySync.SyncInventory(
-            InventoryItemId,
-            Item."No.",
-            InventoryAtLocation);
+        LocationMgt.SyncInventoryForItem(
+            Item,
+            InventoryItemId);
 
         UpdateMappingSuccess(
             Item."No.",
@@ -334,32 +302,14 @@ codeunit 50120 "Shopify Product Sync"
     procedure ExecuteInventorySync(
         var Item: Record Item)
     var
-        ShopifySetup:
-            Record "Shopify Integration Setup";
-
         Mapping:
             Record "Shopify Product Mapping";
 
-        ShopifyInventorySync:
-            Codeunit "Shopify Inventory Sync";
-
-        ItemForInventory:
-            Record Item;
-
-        InventoryAtLocation: Decimal;
+        LocationMgt:
+            Codeunit "Shopify Location Mgt.";
     begin
         ValidateItem(
             Item);
-
-        if not ShopifySetup.Get('SETUP') then
-            Error(
-                'Shopify Integration Setup does not exist.');
-
-        ShopifySetup.TestField(
-            "BC Location Code");
-
-        ShopifySetup.TestField(
-            "Shopify Location ID");
 
         if not Mapping.Get(
             Item."No.")
@@ -371,23 +321,9 @@ codeunit 50120 "Shopify Product Sync"
         Mapping.TestField(
             "Shopify Inventory Item ID");
 
-        ItemForInventory.Get(
-            Item."No.");
-
-        ItemForInventory.SetRange(
-            "Location Filter",
-            ShopifySetup."BC Location Code");
-
-        ItemForInventory.CalcFields(
-            Inventory);
-
-        InventoryAtLocation :=
-            ItemForInventory.Inventory;
-
-        ShopifyInventorySync.SyncInventory(
-            Mapping."Shopify Inventory Item ID",
-            Item."No.",
-            InventoryAtLocation);
+        LocationMgt.SyncInventoryForItem(
+            Item,
+            Mapping."Shopify Inventory Item ID");
 
         UpdateMappingSuccess(
             Item."No.",

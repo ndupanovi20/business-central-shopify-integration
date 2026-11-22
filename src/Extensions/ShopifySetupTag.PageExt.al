@@ -3,7 +3,7 @@ pageextension 50144 "Shopify Setup Tag Ext"
 {
     layout
     {
-        addafter(OrderSettings)
+        addbefore(Automation)
         {
             group(OrderTagging)
             {

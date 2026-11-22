@@ -3,15 +3,12 @@ pageextension 50146 "Shopify Admin Audit Ext"
 {
     actions
     {
-        addlast(Processing)
+        addlast(SetupHealthActions)
         {
             action(ValidateLocalConfiguration)
             {
                 ApplicationArea = All;
                 Caption = 'Validate Configuration';
-
-                Promoted = true;
-                PromotedCategory = Process;
 
                 trigger OnAction()
                 var
@@ -21,14 +18,14 @@ pageextension 50146 "Shopify Admin Audit Ext"
                     Validator.RunValidation();
                 end;
             }
+        }
 
+        addlast(MonitoringActions)
+        {
             action(CreateAuditSnapshot)
             {
                 ApplicationArea = All;
                 Caption = 'Create Audit Snapshot';
-
-                Promoted = true;
-                PromotedCategory = Process;
 
                 trigger OnAction()
                 var
@@ -47,6 +44,24 @@ pageextension 50146 "Shopify Admin Audit Ext"
 
                 RunObject =
                     page "Shopify Audit Snapshots";
+            }
+        }
+
+        addlast(SetupHealthPromoted)
+        {
+            actionref(ValidateLocalConfigurationPromoted; ValidateLocalConfiguration)
+            {
+            }
+        }
+
+        addlast(MonitoringPromoted)
+        {
+            actionref(CreateAuditSnapshotPromoted; CreateAuditSnapshot)
+            {
+            }
+
+            actionref(OpenAuditSnapshotsPromoted; OpenAuditSnapshots)
+            {
             }
         }
     }

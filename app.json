@@ -2,7 +2,7 @@
     "id": "d4d00f7d-a735-4504-86f6-bffb7ef7c783",
     "name": "BC Shopify Integration",
     "publisher": "Nimaj Dupanovic",
-    "version": "1.0.0.0",
+    "version": "1.6.0.0",
     "brief": "Integration between Business Central and Shopify",
     "description": "Custom integration between Microsoft Dynamics 365 Business Central and Shopify.",
     "privacyStatement": "",
@@ -17,7 +17,7 @@
     "idRanges": [
         {
             "from": 50100,
-            "to": 50250
+            "to": 50350
         }
     ],
     "resourceExposurePolicy": {

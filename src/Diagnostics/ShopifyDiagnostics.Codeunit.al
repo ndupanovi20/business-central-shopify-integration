@@ -86,6 +86,12 @@ codeunit 50170 "Shopify Diagnostics"
         ShopifyClient:
             Codeunit "Shopify Client";
 
+        PayoutMgt:
+            Codeunit "Shopify Payout Mgt.";
+
+        LocationMgt:
+            Codeunit "Shopify Location Mgt.";
+
         Variables:
             JsonObject;
 
@@ -118,11 +124,15 @@ codeunit 50170 "Shopify Diagnostics"
         ShopifySetup.TestField(
             "API Version");
 
-        ShopifySetup.TestField(
-            "Shopify Location ID");
+        if ShopifySetup."Use Location Mappings" then
+            LocationMgt.ValidateLocationMappings()
+        else begin
+            ShopifySetup.TestField(
+                "Shopify Location ID");
 
-        ShopifySetup.TestField(
-            "BC Location Code");
+            ShopifySetup.TestField(
+                "BC Location Code");
+        end;
 
         ShopifySetup.TestField(
             "BC Customer No.");
@@ -149,12 +159,13 @@ codeunit 50170 "Shopify Diagnostics"
                 'Business Central customer %1 is blocked.',
                 ShopifySetup."BC Customer No.");
 
-        if not Location.Get(
-            ShopifySetup."BC Location Code")
-        then
-            Error(
-                'Business Central location %1 does not exist.',
-                ShopifySetup."BC Location Code");
+        if not ShopifySetup."Use Location Mappings" then
+            if not Location.Get(
+                ShopifySetup."BC Location Code")
+            then
+                Error(
+                    'Business Central location %1 does not exist.',
+                    ShopifySetup."BC Location Code");
 
         if ShopifySetup."BC Shipping Item No." <> '' then begin
             if not ShippingItem.Get(
@@ -170,13 +181,14 @@ codeunit 50170 "Shopify Diagnostics"
                     ShopifySetup."BC Shipping Item No.");
         end;
 
-        if StrPos(
-            ShopifySetup."Shopify Location ID",
-            'gid://shopify/Location/')
-           <> 1
-        then
-            Error(
-                'Shopify Location ID does not have a valid Shopify GID format.');
+        if not ShopifySetup."Use Location Mappings" then
+            if StrPos(
+                ShopifySetup."Shopify Location ID",
+                'gid://shopify/Location/')
+               <> 1
+            then
+                Error(
+                    'Shopify Location ID does not have a valid Shopify GID format.');
 
         ShopName :=
             ShopifyClient.GetShopName();
@@ -238,10 +250,51 @@ codeunit 50170 "Shopify Diagnostics"
             ScopesArray,
             'read_orders');
 
+        if ShopifySetup."Customer Strategy" <>
+           ShopifySetup."Customer Strategy"::"Generic Customer"
+        then
+            RequireScope(
+                ScopesArray,
+                'read_customers');
+
+        if ShopifySetup."Use Location Mappings" then
+            RequireScope(
+                ScopesArray,
+                'read_merchant_managed_fulfillment_orders');
+
         if ShopifySetup."Tag Imported Orders" then
             RequireScope(
                 ScopesArray,
                 'write_orders');
+
+        if ShopifySetup."Auto Create Fulfillment" or
+           ShopifySetup."Auto Sync Fulfillment Tracking"
+        then begin
+            RequireScope(
+                ScopesArray,
+                'read_merchant_managed_fulfillment_orders');
+
+            RequireScope(
+                ScopesArray,
+                'write_merchant_managed_fulfillment_orders');
+        end;
+
+        if ShopifySetup."Auto Import Shopify Payouts" then begin
+            if not HasScope(
+                ScopesArray,
+                'read_shopify_payments') and
+               not HasScope(
+                   ScopesArray,
+                   'read_shopify_payments_accounts') and
+               not HasScope(
+                   ScopesArray,
+                   'read_shopify_payments_payouts')
+            then
+                Error(
+                    'Shopify payout import requires read_shopify_payments, read_shopify_payments_accounts or read_shopify_payments_payouts access.');
+
+            PayoutMgt.TestShopifyPaymentsAccess();
+        end;
     end;
 
     local procedure RequireScope(

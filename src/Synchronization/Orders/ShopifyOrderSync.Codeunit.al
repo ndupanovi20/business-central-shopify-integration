@@ -8,7 +8,9 @@ codeunit 50132 "Shopify Order Sync"
             Error('Shopify Integration Setup does not exist.');
 
         ShopifySetup.TestField("BC Customer No.");
-        ShopifySetup.TestField("BC Location Code");
+
+        if not ShopifySetup."Use Location Mappings" then
+            ShopifySetup.TestField("BC Location Code");
 
         FetchOrdersToBuffer(ShopifySetup);
         exit(ProcessOrderBuffer());
@@ -32,31 +34,8 @@ codeunit 50132 "Shopify Order Sync"
         I: Integer;
     begin
         QueryText :=
-            'query GetOrders($first: Int!, $after: String) {' +
-            ' orders(first: $first, after: $after, sortKey: CREATED_AT, reverse: true) {' +
-            '  nodes {' +
-            '   id name createdAt cancelledAt presentmentCurrencyCode' +
-            '   displayFinancialStatus displayFulfillmentStatus' +
-            '   currentTotalPriceSet { presentmentMoney { amount currencyCode } }' +
-            '   lineItems(first: 250) {' +
-            '    nodes {' +
-            '     id title sku quantity currentQuantity' +
-            '     originalUnitPriceSet { presentmentMoney { amount currencyCode } }' +
-            '     discountAllocations {' +
-            '      allocatedAmountSet { presentmentMoney { amount currencyCode } }' +
-            '     }' +
-            '    }' +
-            '   }' +
-            '   shippingLines(first: 50) {' +
-            '    nodes {' +
-            '     title' +
-            '     discountedPriceSet { presentmentMoney { amount currencyCode } }' +
-            '    }' +
-            '   }' +
-            '  }' +
-            '  pageInfo { hasNextPage endCursor }' +
-            ' }' +
-            '}';
+            BuildOrdersQuery(
+                ShopifySetup);
 
         Cursor := '';
         HasNextPage := true;
@@ -136,6 +115,75 @@ codeunit 50132 "Shopify Order Sync"
                 end;
             end;
         end;
+    end;
+
+    local procedure BuildOrdersQuery(
+        ShopifySetup: Record "Shopify Integration Setup"): Text
+    var
+        QueryText: Text;
+        AddressFields: Text;
+    begin
+        AddressFields :=
+            ' name firstName lastName company address1 address2 city province provinceCode country countryCodeV2 zip phone ';
+
+        QueryText :=
+            'query GetOrders($first: Int!, $after: String) {' +
+            ' orders(first: $first, after: $after, sortKey: CREATED_AT, reverse: true) {' +
+            '  nodes {' +
+            '   id name createdAt cancelledAt presentmentCurrencyCode' +
+            '   displayFinancialStatus displayFulfillmentStatus' +
+            '   currentTotalPriceSet { presentmentMoney { amount currencyCode } }';
+
+        if ShopifySetup."Apply Shopify Order Addresses" then
+            QueryText +=
+                ' email phone' +
+                ' shippingAddress {' + AddressFields + ' }' +
+                ' billingAddress {' + AddressFields + ' }';
+
+        if ShopifySetup."Customer Strategy" <>
+           ShopifySetup."Customer Strategy"::"Generic Customer"
+        then
+            QueryText +=
+                ' customer {' +
+                '  id displayName firstName lastName' +
+                '  defaultEmailAddress { emailAddress }' +
+                '  defaultPhoneNumber { phoneNumber }' +
+                '  defaultAddress {' +
+                '   address1 address2 city province provinceCode country countryCodeV2 zip phone' +
+                '  }' +
+                ' }';
+
+        if ShopifySetup."Use Location Mappings" then
+            QueryText +=
+                ' fulfillmentOrders(first: 50) {' +
+                '  nodes {' +
+                '   id' +
+                '   assignedLocation { location { id name } }' +
+                '  }' +
+                ' }';
+
+        QueryText +=
+            '   lineItems(first: 250) {' +
+            '    nodes {' +
+            '     id title sku quantity currentQuantity' +
+            '     originalUnitPriceSet { presentmentMoney { amount currencyCode } }' +
+            '     discountAllocations {' +
+            '      allocatedAmountSet { presentmentMoney { amount currencyCode } }' +
+            '     }' +
+            '    }' +
+            '   }' +
+            '   shippingLines(first: 50) {' +
+            '    nodes {' +
+            '     title' +
+            '     discountedPriceSet { presentmentMoney { amount currencyCode } }' +
+            '    }' +
+            '   }' +
+            '  }' +
+            '  pageInfo { hasNextPage endCursor }' +
+            ' }' +
+            '}';
+
+        exit(QueryText);
     end;
 
     local procedure BufferOrder(
@@ -493,12 +541,20 @@ codeunit 50132 "Shopify Order Sync"
         ShopifySetup: Record "Shopify Integration Setup";
         ShopifyOrderImport: Record "Shopify Order Import";
         SalesHeader: Record "Sales Header";
+        CustomerMgt: Codeunit "Shopify Customer Mgt.";
+        LocationMgt: Codeunit "Shopify Location Mgt.";
         OrderObject: JsonObject;
         PayloadText: Text;
         ShopifyOrderId: Text;
         ShopifyOrderName: Text;
+        ShopifyCustomerId: Text;
+        ShopifyCustomerName: Text;
+        ShopifyCustomerEmail: Text;
+        ShopifyLocationId: Text;
         CurrencyText: Text;
         CurrencyCode: Code[10];
+        CustomerNo: Code[20];
+        BCLocationCode: Code[10];
         ShopifyTotal: Decimal;
         ShopifyShipping: Decimal;
         TotalDiscount: Decimal;
@@ -535,9 +591,6 @@ codeunit 50132 "Shopify Order Sync"
         ShopifySetup.TestField(
             "BC Customer No.");
 
-        ShopifySetup.TestField(
-            "BC Location Code");
-
         ShopifyOrderName :=
             GetRequiredText(
                 OrderObject,
@@ -561,16 +614,37 @@ codeunit 50132 "Shopify Order Sync"
                 'currentTotalPriceSet',
                 CurrencyCode);
 
-        CreateSalesHeader(
-            SalesHeader,
+        CustomerMgt.ResolveCustomerForOrder(
+            OrderObject,
             ShopifySetup,
             ShopifyOrderName,
-            CurrencyCode);
+            CustomerNo,
+            ShopifyCustomerId,
+            ShopifyCustomerName,
+            ShopifyCustomerEmail);
+
+        LocationMgt.ResolveOrderLocation(
+            OrderObject,
+            ShopifySetup,
+            BCLocationCode,
+            ShopifyLocationId);
+
+        CreateSalesHeader(
+            SalesHeader,
+            ShopifyOrderName,
+            CurrencyCode,
+            CustomerNo,
+            BCLocationCode);
+
+        if ShopifySetup."Apply Shopify Order Addresses" then
+            CustomerMgt.ApplyOrderAddresses(
+                SalesHeader,
+                OrderObject);
 
         ProcessOrderLines(
             OrderObject,
             SalesHeader,
-            ShopifySetup,
+            BCLocationCode,
             CurrencyCode,
             LineCount,
             TotalDiscount);
@@ -579,6 +653,7 @@ codeunit 50132 "Shopify Order Sync"
             OrderObject,
             SalesHeader,
             ShopifySetup,
+            BCLocationCode,
             CurrencyCode,
             ShopifyShipping);
 
@@ -609,14 +684,21 @@ codeunit 50132 "Shopify Order Sync"
             BCTotal,
             ShopifyShipping,
             TotalDiscount,
-            LineCount);
+            LineCount,
+            ShopifyCustomerId,
+            ShopifyCustomerName,
+            ShopifyCustomerEmail,
+            CustomerNo,
+            BCLocationCode,
+            ShopifyLocationId);
     end;
 
     local procedure CreateSalesHeader(
         var SalesHeader: Record "Sales Header";
-        ShopifySetup: Record "Shopify Integration Setup";
         ShopifyOrderName: Text;
-        CurrencyCode: Code[10])
+        CurrencyCode: Code[10];
+        CustomerNo: Code[20];
+        BCLocationCode: Code[10])
     begin
         SalesHeader.Init();
 
@@ -631,11 +713,11 @@ codeunit 50132 "Shopify Order Sync"
 
         SalesHeader.Validate(
             "Sell-to Customer No.",
-            ShopifySetup."BC Customer No.");
+            CustomerNo);
 
         SalesHeader.Validate(
             "Location Code",
-            ShopifySetup."BC Location Code");
+            BCLocationCode);
 
         ApplyCurrency(
             SalesHeader,
@@ -662,7 +744,7 @@ codeunit 50132 "Shopify Order Sync"
     local procedure ProcessOrderLines(
         OrderObject: JsonObject;
         SalesHeader: Record "Sales Header";
-        ShopifySetup: Record "Shopify Integration Setup";
+        BCLocationCode: Code[10];
         CurrencyCode: Code[10];
         var LineCount: Integer;
         var TotalDiscount: Decimal)
@@ -674,6 +756,9 @@ codeunit 50132 "Shopify Order Sync"
         LinesArray: JsonArray;
         Token: JsonToken;
         SKUText: Text;
+        ShopifyLineItemId: Text;
+        ShopifyOrderId: Text;
+        ShopifyOrderName: Text;
         ItemNo: Code[20];
         Quantity: Integer;
         UnitPrice: Decimal;
@@ -699,6 +784,16 @@ codeunit 50132 "Shopify Order Sync"
 
         LineNo := 0;
 
+        ShopifyOrderId :=
+            GetRequiredText(
+                OrderObject,
+                'id');
+
+        ShopifyOrderName :=
+            GetRequiredText(
+                OrderObject,
+                'name');
+
         for I := 0 to LinesArray.Count() - 1 do begin
             LinesArray.Get(
                 I,
@@ -713,6 +808,11 @@ codeunit 50132 "Shopify Order Sync"
                     'currentQuantity');
 
             if Quantity > 0 then begin
+                ShopifyLineItemId :=
+                    GetRequiredText(
+                        LineObject,
+                        'id');
+
                 SKUText :=
                     GetOptionalText(
                         LineObject,
@@ -776,12 +876,24 @@ codeunit 50132 "Shopify Order Sync"
 
                 CreateItemSalesLine(
                     SalesHeader,
-                    ShopifySetup,
+                    BCLocationCode,
                     ItemNo,
                     Quantity,
                     UnitPrice,
                     DiscountPercent,
                     LineNo);
+
+                SaveOrderLineMapping(
+                    ShopifyOrderId,
+                    ShopifyOrderName,
+                    ShopifyLineItemId,
+                    SKUText,
+                    SalesHeader."No.",
+                    LineNo,
+                    ItemNo,
+                    Quantity,
+                    UnitPrice,
+                    DiscountAmount);
 
                 TotalDiscount +=
                     DiscountAmount;
@@ -795,9 +907,90 @@ codeunit 50132 "Shopify Order Sync"
                 'Shopify order does not contain any active quantities to import.');
     end;
 
+
+    local procedure SaveOrderLineMapping(
+        ShopifyOrderId: Text;
+        ShopifyOrderName: Text;
+        ShopifyLineItemId: Text;
+        SKUText: Text;
+        BCOrderNo: Code[20];
+        BCOrderLineNo: Integer;
+        ItemNo: Code[20];
+        Quantity: Decimal;
+        UnitPrice: Decimal;
+        DiscountAmount: Decimal)
+    var
+        LineMapping: Record "Shopify Order Line Mapping";
+        IsNew: Boolean;
+    begin
+        if (ShopifyOrderId = '') or
+           (ShopifyLineItemId = '')
+        then
+            exit;
+
+        IsNew :=
+            not LineMapping.Get(
+                ShopifyOrderId,
+                ShopifyLineItemId);
+
+        if IsNew then begin
+            LineMapping.Init();
+            LineMapping."Shopify Order ID" :=
+                CopyStr(
+                    ShopifyOrderId,
+                    1,
+                    MaxStrLen(LineMapping."Shopify Order ID"));
+            LineMapping."Shopify Line Item ID" :=
+                CopyStr(
+                    ShopifyLineItemId,
+                    1,
+                    MaxStrLen(LineMapping."Shopify Line Item ID"));
+            LineMapping."Created At" :=
+                CurrentDateTime();
+        end;
+
+        LineMapping."Shopify Order Name" :=
+            CopyStr(
+                ShopifyOrderName,
+                1,
+                MaxStrLen(LineMapping."Shopify Order Name"));
+
+        LineMapping."Shopify SKU" :=
+            CopyStr(
+                SKUText,
+                1,
+                MaxStrLen(LineMapping."Shopify SKU"));
+
+        LineMapping."BC Order No." :=
+            BCOrderNo;
+
+        LineMapping."BC Order Line No." :=
+            BCOrderLineNo;
+
+        LineMapping."BC Item No." :=
+            ItemNo;
+
+        LineMapping."Original Quantity" :=
+            Quantity;
+
+        LineMapping."Original Unit Price" :=
+            UnitPrice;
+
+        LineMapping."Original Discount Amount" :=
+            DiscountAmount;
+
+        LineMapping."Updated At" :=
+            CurrentDateTime();
+
+        if IsNew then
+            LineMapping.Insert(true)
+        else
+            LineMapping.Modify(true);
+    end;
+
     local procedure CreateItemSalesLine(
         SalesHeader: Record "Sales Header";
-        ShopifySetup: Record "Shopify Integration Setup";
+        BCLocationCode: Code[10];
         ItemNo: Code[20];
         Quantity: Decimal;
         UnitPrice: Decimal;
@@ -830,7 +1023,7 @@ codeunit 50132 "Shopify Order Sync"
 
         SalesLine.Validate(
             "Location Code",
-            ShopifySetup."BC Location Code");
+            BCLocationCode);
 
         SalesLine.Validate(
             Quantity,
@@ -852,6 +1045,7 @@ codeunit 50132 "Shopify Order Sync"
         OrderObject: JsonObject;
         SalesHeader: Record "Sales Header";
         ShopifySetup: Record "Shopify Integration Setup";
+        BCLocationCode: Code[10];
         CurrencyCode: Code[10];
         var ShippingTotal: Decimal)
     var
@@ -910,6 +1104,7 @@ codeunit 50132 "Shopify Order Sync"
                 CreateShippingSalesLine(
                     SalesHeader,
                     ShopifySetup,
+                    BCLocationCode,
                     ShippingTitle,
                     ShippingAmount,
                     LineNo);
@@ -926,6 +1121,7 @@ codeunit 50132 "Shopify Order Sync"
     local procedure CreateShippingSalesLine(
         SalesHeader: Record "Sales Header";
         ShopifySetup: Record "Shopify Integration Setup";
+        BCLocationCode: Code[10];
         ShippingTitle: Text;
         ShippingAmount: Decimal;
         LineNo: Integer)
@@ -969,7 +1165,7 @@ codeunit 50132 "Shopify Order Sync"
 
         SalesLine.Validate(
             "Location Code",
-            ShopifySetup."BC Location Code");
+            BCLocationCode);
 
         SalesLine.Validate(
             Quantity,
@@ -1044,7 +1240,13 @@ codeunit 50132 "Shopify Order Sync"
         BCTotal: Decimal;
         ShippingTotal: Decimal;
         TotalDiscount: Decimal;
-        LineCount: Integer)
+        LineCount: Integer;
+        ShopifyCustomerId: Text;
+        ShopifyCustomerName: Text;
+        ShopifyCustomerEmail: Text;
+        CustomerNo: Code[20];
+        BCLocationCode: Code[10];
+        ShopifyLocationId: Text)
     var
         ShopifyOrderId: Text;
     begin
@@ -1122,6 +1324,36 @@ codeunit 50132 "Shopify Order Sync"
 
         ImportRecord."Line Count" :=
             LineCount;
+
+        ImportRecord."Shopify Customer ID" :=
+            CopyStr(
+                ShopifyCustomerId,
+                1,
+                MaxStrLen(ImportRecord."Shopify Customer ID"));
+
+        ImportRecord."BC Customer No. Used" :=
+            CustomerNo;
+
+        ImportRecord."Shopify Customer Name" :=
+            CopyStr(
+                ShopifyCustomerName,
+                1,
+                MaxStrLen(ImportRecord."Shopify Customer Name"));
+
+        ImportRecord."Shopify Customer E-Mail" :=
+            CopyStr(
+                ShopifyCustomerEmail,
+                1,
+                MaxStrLen(ImportRecord."Shopify Customer E-Mail"));
+
+        ImportRecord."BC Location Code Used" :=
+            BCLocationCode;
+
+        ImportRecord."Shopify Location ID Used" :=
+            CopyStr(
+                ShopifyLocationId,
+                1,
+                MaxStrLen(ImportRecord."Shopify Location ID Used"));
 
         ImportRecord.Insert(true);
     end;

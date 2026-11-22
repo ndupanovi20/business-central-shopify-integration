@@ -15,10 +15,18 @@ codeunit 50191 "Shopify Job Queue Mgt."
                 'Shopify Integration Setup does not exist.');
 
         if not ShopifySetup."Auto Import Orders" and
-           not ShopifySetup."Auto Sync Inventory"
+           not ShopifySetup."Auto Sync Inventory" and
+           not ShopifySetup."Auto Post Imported Orders" and
+           not ShopifySetup."Auto Create Fulfillment" and
+           not ShopifySetup."Auto Sync Fulfillment Tracking" and
+           not ShopifySetup."Auto Record Shopify Payments" and
+           not ShopifySetup."Auto Import Shopify Refunds" and
+           not ShopifySetup."Auto Process Shopify Refunds" and
+           not ShopifySetup."Auto Import Shopify Payouts" and
+           not ShopifySetup."Auto Post Paid Payouts"
         then
             Error(
-                'Enable Auto Import Orders and/or Auto Sync Inventory before starting the background job.');
+                'Enable at least one Shopify automation option before starting the background job.');
 
         if ShopifySetup."Background Sync Interval" <= 0 then
             Error(

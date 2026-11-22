@@ -64,19 +64,23 @@ codeunit 50193 "Shopify Admin Mgt."
         Buffer:
             Record "Shopify Order Buffer";
 
-        ImportRecord:
-            Record "Shopify Order Import";
-
         SyncLog:
             Record "Shopify Sync Log";
+
     begin
         GetSetup(
             ShopifySetup);
 
         // Important:
-        // Move the cutoff first so old Shopify orders are not
-        // imported again after the registry is cleared.
+        // Move the cutoffs so a new operational/demo window starts now.
+        // Durable registries remain preserved.
         ShopifySetup."Import Orders From" :=
+            CurrentDateTime();
+
+        ShopifySetup."Import Payouts From" :=
+            CurrentDateTime();
+
+        ShopifySetup."Import Refunds From" :=
             CurrentDateTime();
 
         Clear(
@@ -87,63 +91,38 @@ codeunit 50193 "Shopify Admin Mgt."
 
         ShopifySetup.Modify(true);
 
+        // Only transient operational history is cleared here.
+        // Durable integration registries are intentionally preserved because
+        // they are linked to posted Business Central documents and protect
+        // against duplicate processing.
         Buffer.DeleteAll(true);
-
-        ImportRecord.DeleteAll(true);
-
         SyncLog.DeleteAll(true);
     end;
 
     procedure DeleteOpenDemoSalesOrders(): Integer
     var
-        SalesHeader:
-            Record "Sales Header";
-
-        ShopifySetup:
-            Record "Shopify Integration Setup";
-
+        SalesHeader: Record "Sales Header";
+        ImportRecordLocal: Record "Shopify Order Import";
         DeletedCount: Integer;
     begin
-        GetSetup(
-            ShopifySetup);
+        ImportRecordLocal.Reset();
 
-        ShopifySetup.TestField(
-            "BC Customer No.");
-
-        SalesHeader.Reset();
-
-        SalesHeader.SetRange(
-            "Document Type",
-            SalesHeader."Document Type"::Order);
-
-        SalesHeader.SetRange(
-            "Sell-to Customer No.",
-            ShopifySetup."BC Customer No.");
-
-        SalesHeader.SetRange(
-            Status,
-            SalesHeader.Status::Open);
-
-        SalesHeader.SetFilter(
-            "External Document No.",
-            '#*');
-
-        if not SalesHeader.FindSet() then
+        if not ImportRecordLocal.FindSet() then
             exit(0);
 
         repeat
-            if IsShopifySalesOrder(
-                SalesHeader)
-            then begin
-                SalesHeader.Delete(true);
+            if ImportRecordLocal."BC Order No." <> '' then
+                if SalesHeader.Get(
+                    SalesHeader."Document Type"::Order,
+                    ImportRecordLocal."BC Order No.")
+                then
+                    if SalesHeader.Status = SalesHeader.Status::Open then begin
+                        SalesHeader.Delete(true);
+                        DeletedCount += 1;
+                    end;
+        until ImportRecordLocal.Next() = 0;
 
-                DeletedCount +=
-                    1;
-            end;
-        until SalesHeader.Next() = 0;
-
-        exit(
-            DeletedCount);
+        exit(DeletedCount);
     end;
 
     procedure PrepareFreshDemoSession(
@@ -165,73 +144,25 @@ codeunit 50193 "Shopify Admin Mgt."
 
     local procedure CountDemoSalesOrders(): Integer
     var
-        SalesHeader:
-            Record "Sales Header";
-
-        ShopifySetup:
-            Record "Shopify Integration Setup";
-
+        SalesHeader: Record "Sales Header";
+        ImportRecordLocal: Record "Shopify Order Import";
         ResultCount: Integer;
     begin
-        if not ShopifySetup.Get(
-            'SETUP')
-        then
-            exit(0);
+        ImportRecordLocal.Reset();
 
-        if ShopifySetup."BC Customer No." = '' then
-            exit(0);
-
-        SalesHeader.Reset();
-
-        SalesHeader.SetRange(
-            "Document Type",
-            SalesHeader."Document Type"::Order);
-
-        SalesHeader.SetRange(
-            "Sell-to Customer No.",
-            ShopifySetup."BC Customer No.");
-
-        SalesHeader.SetFilter(
-            "External Document No.",
-            '#*');
-
-        if not SalesHeader.FindSet() then
+        if not ImportRecordLocal.FindSet() then
             exit(0);
 
         repeat
-            if IsShopifySalesOrder(
-                SalesHeader)
-            then
-                ResultCount +=
-                    1;
-        until SalesHeader.Next() = 0;
+            if ImportRecordLocal."BC Order No." <> '' then
+                if SalesHeader.Get(
+                    SalesHeader."Document Type"::Order,
+                    ImportRecordLocal."BC Order No.")
+                then
+                    ResultCount += 1;
+        until ImportRecordLocal.Next() = 0;
 
-        exit(
-            ResultCount);
-    end;
-
-    local procedure IsShopifySalesOrder(
-        SalesHeader: Record "Sales Header"): Boolean
-    begin
-        if CopyStr(
-            SalesHeader."External Document No.",
-            1,
-            1) <> '#'
-        then
-            exit(false);
-
-        if StrPos(
-            UpperCase(
-                SalesHeader."Your Reference"),
-            'SHOPIFY') = 1
-        then
-            exit(true);
-
-        // Older imported orders may not have Your Reference
-        // populated in exactly the same way.
-        // External document number beginning with # and the
-        // configured Shopify customer are sufficient for demo cleanup.
-        exit(true);
+        exit(ResultCount);
     end;
 
     local procedure GetSetup(

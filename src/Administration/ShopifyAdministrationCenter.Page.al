@@ -51,15 +51,20 @@ page 50198 "Shopify Administration Center"
                 }
             }
 
-            group(RuntimeState)
+            group(MasterDataState)
             {
-                Caption = 'Integration Runtime';
+                Caption = 'Master Data';
 
                 field(MappedProductCount; MappedProductCount)
                 {
                     ApplicationArea = All;
                     Caption = 'Mapped Products';
                 }
+            }
+
+            group(OrderState)
+            {
+                Caption = 'Orders';
 
                 field(BufferCount; BufferCount)
                 {
@@ -73,18 +78,6 @@ page 50198 "Shopify Administration Center"
                     Caption = 'Imported Order Registry';
                 }
 
-                field(DemoSalesOrderCount; DemoSalesOrderCount)
-                {
-                    ApplicationArea = All;
-                    Caption = 'BC Shopify Sales Orders';
-                }
-
-                field(SyncLogCount; SyncLogCount)
-                {
-                    ApplicationArea = All;
-                    Caption = 'Synchronization Log Entries';
-                }
-
                 field(ErrorBufferCount; ErrorBufferCount)
                 {
                     ApplicationArea = All;
@@ -93,9 +86,38 @@ page 50198 "Shopify Administration Center"
                 }
             }
 
+            group(ERPProcessingState)
+            {
+                Caption = 'ERP Processing';
+
+                field(DemoSalesOrderCount; DemoSalesOrderCount)
+                {
+                    ApplicationArea = All;
+                    Caption = 'BC Shopify Sales Orders';
+                }
+            }
+
+            group(ShopifyOperationsState)
+            {
+                Caption = 'Shopify Operations';
+
+                field(TaggedOrderCount; TaggedOrderCount)
+                {
+                    ApplicationArea = All;
+                    Caption = 'Successfully Tagged Orders';
+                }
+
+                field(TagErrorCount; TagErrorCount)
+                {
+                    ApplicationArea = All;
+                    Caption = 'Tag Errors';
+                    StyleExpr = TagErrorStyle;
+                }
+            }
+
             group(OrderImport)
             {
-                Caption = 'Order Import';
+                Caption = 'Order Import Rules';
 
                 field("Import Orders From"; Rec."Import Orders From")
                 {
@@ -110,7 +132,7 @@ page 50198 "Shopify Administration Center"
 
             group(Automation)
             {
-                Caption = 'Automation';
+                Caption = 'Automation Settings';
 
                 field("Auto Import Orders"; Rec."Auto Import Orders")
                 {
@@ -127,6 +149,11 @@ page 50198 "Shopify Administration Center"
                     ApplicationArea = All;
                     Caption = 'Background Interval (Min.)';
                 }
+            }
+
+            group(MonitoringState)
+            {
+                Caption = 'Automation & Monitoring';
 
                 field(JobQueueStatus; JobQueueStatus)
                 {
@@ -149,6 +176,12 @@ page 50198 "Shopify Administration Center"
                 {
                     ApplicationArea = All;
                 }
+
+                field(SyncLogCount; SyncLogCount)
+                {
+                    ApplicationArea = All;
+                    Caption = 'Synchronization Log Entries';
+                }
             }
 
             group(Tagging)
@@ -164,24 +197,11 @@ page 50198 "Shopify Administration Center"
                 {
                     ApplicationArea = All;
                 }
-
-                field(TaggedOrderCount; TaggedOrderCount)
-                {
-                    ApplicationArea = All;
-                    Caption = 'Successfully Tagged Orders';
-                }
-
-                field(TagErrorCount; TagErrorCount)
-                {
-                    ApplicationArea = All;
-                    Caption = 'Tag Errors';
-                    StyleExpr = TagErrorStyle;
-                }
             }
 
             group(DemoReadiness)
             {
-                Caption = 'Demo Readiness';
+                Caption = 'Readiness';
 
                 field(ConnectionConfigured; ConnectionConfigured)
                 {
@@ -216,15 +236,101 @@ page 50198 "Shopify Administration Center"
 
     actions
     {
+        area(Promoted)
+        {
+            actionref(RefreshPromoted; Refresh)
+            {
+            }
+
+            actionref(RunSyncNowPromoted; RunSyncNow)
+            {
+            }
+
+            group(SetupHealthPromoted)
+            {
+                Caption = 'Setup & Health';
+
+                actionref(OpenIntegrationSetupPromoted; OpenIntegrationSetup)
+                {
+                }
+
+                actionref(OpenIntegrationStatusPromoted; OpenIntegrationStatus)
+                {
+                }
+
+                actionref(RunDiagnosticsPromoted; RunDiagnostics)
+                {
+                }
+            }
+
+            group(MasterDataPromoted)
+            {
+                Caption = 'Master Data';
+
+                actionref(OpenProductMappingsPromoted; OpenProductMappings)
+                {
+                }
+            }
+
+            group(OrderProcessingPromoted)
+            {
+                Caption = 'Orders & Posting';
+
+                actionref(OpenOrderBufferPromoted; OpenOrderBuffer)
+                {
+                }
+
+                actionref(OpenOrderImportsPromoted; OpenOrderImports)
+                {
+                }
+            }
+
+            group(FinancePromoted)
+            {
+                Caption = 'Finance';
+
+                actionref(OpenPaymentEntriesPromoted; OpenPaymentEntriesBase)
+                {
+                }
+
+                actionref(OpenRefundEntriesPromoted; OpenRefundEntriesBase)
+                {
+                }
+
+                actionref(OpenPayoutEntriesPromoted; OpenPayoutEntriesBase)
+                {
+                }
+            }
+
+            group(FulfillmentPromoted)
+            {
+                Caption = 'Fulfillment';
+
+                actionref(OpenFulfillmentEntriesPromoted; OpenFulfillmentEntriesBase)
+                {
+                }
+            }
+
+            group(MonitoringPromoted)
+            {
+                Caption = 'Automation & Monitoring';
+
+                actionref(OpenSyncLogPromoted; OpenSyncLog)
+                {
+                }
+
+                actionref(OpenJobQueuePromoted; OpenJobQueue)
+                {
+                }
+            }
+        }
+
         area(Processing)
         {
             action(Refresh)
             {
                 ApplicationArea = All;
                 Caption = 'Refresh';
-
-                Promoted = true;
-                PromotedCategory = Process;
 
                 trigger OnAction()
                 begin
@@ -237,34 +343,10 @@ page 50198 "Shopify Administration Center"
                 end;
             }
 
-            action(RunDiagnostics)
-            {
-                ApplicationArea = All;
-                Caption = 'Run Diagnostics';
-
-                Promoted = true;
-                PromotedCategory = Process;
-
-                trigger OnAction()
-                var
-                    Diagnostics:
-                        Codeunit "Shopify Diagnostics";
-                begin
-                    Diagnostics.RunDiagnostics();
-
-                    CalculateState();
-
-                    CurrPage.Update(false);
-                end;
-            }
-
             action(RunSyncNow)
             {
                 ApplicationArea = All;
                 Caption = 'Run Synchronization Now';
-
-                Promoted = true;
-                PromotedCategory = Process;
 
                 trigger OnAction()
                 var
@@ -282,190 +364,300 @@ page 50198 "Shopify Administration Center"
                 end;
             }
 
-            action(SetCutoffNow)
+            group(SetupHealthActions)
             {
-                ApplicationArea = All;
-                Caption = 'Set Import Cutoff to Now';
+                Caption = 'Setup & Health';
 
-                trigger OnAction()
-                var
-                    AdminMgt:
-                        Codeunit "Shopify Admin Mgt.";
-                begin
-                    AdminMgt.SetImportCutoffToNow();
+                action(OpenIntegrationSetup)
+                {
+                    ApplicationArea = All;
+                    Caption = 'Integration Setup';
 
-                    Rec.Get(
-                        'SETUP');
+                    RunObject =
+                        page "Shopify Integration Setup";
+                }
 
-                    CalculateState();
+                action(OpenIntegrationStatus)
+                {
+                    ApplicationArea = All;
+                    Caption = 'Integration Status';
 
-                    CurrPage.Update(false);
+                    RunObject =
+                        page "Shopify Integration Status";
+                }
 
-                    Message(
-                        'Shopify order import cutoff was set to the current date and time.');
-                end;
+                action(RunDiagnostics)
+                {
+                    ApplicationArea = All;
+                    Caption = 'Run Diagnostics';
+
+                    trigger OnAction()
+                    var
+                        Diagnostics:
+                            Codeunit "Shopify Diagnostics";
+                    begin
+                        Diagnostics.RunDiagnostics();
+
+                        CalculateState();
+
+                        CurrPage.Update(false);
+                    end;
+                }
             }
 
-            action(ClearRuntimeHistory)
+            group(MasterDataActions)
             {
-                ApplicationArea = All;
-                Caption = 'Clear Runtime History';
+                Caption = 'Master Data';
 
-                trigger OnAction()
-                var
-                    AdminMgt:
-                        Codeunit "Shopify Admin Mgt.";
-                begin
-                    if not Confirm(
-                        'Clear Shopify Order Buffer, Imported Order Registry and Shopify Sync Log? The import cutoff will be moved to the current time. Products, mappings, inventory and setup will remain unchanged.',
-                        false)
-                    then
-                        exit;
+                action(OpenProductMappings)
+                {
+                    ApplicationArea = All;
+                    Caption = 'Product Mappings';
 
-                    AdminMgt.ClearRuntimeHistory();
-
-                    Rec.Get(
-                        'SETUP');
-
-                    CalculateState();
-
-                    CurrPage.Update(false);
-
-                    Message(
-                        'Shopify integration runtime history was cleared successfully.');
-                end;
+                    RunObject =
+                        page "Shopify Product Mappings";
+                }
             }
 
-            action(DeleteOpenDemoOrders)
+            group(OrderProcessingActions)
             {
-                ApplicationArea = All;
-                Caption = 'Delete Open Demo Sales Orders';
+                Caption = 'Orders & Posting';
 
-                trigger OnAction()
-                var
-                    AdminMgt:
-                        Codeunit "Shopify Admin Mgt.";
+                action(OpenOrderBuffer)
+                {
+                    ApplicationArea = All;
+                    Caption = 'Order Buffer';
 
-                    DeletedCount: Integer;
-                begin
-                    if not Confirm(
-                        'Delete all OPEN Business Central Sales Orders created for the configured Shopify customer? Posted documents are not affected.',
-                        false)
-                    then
-                        exit;
+                    RunObject =
+                        page "Shopify Order Buffer";
+                }
 
-                    DeletedCount :=
-                        AdminMgt.DeleteOpenDemoSalesOrders();
+                action(OpenOrderImports)
+                {
+                    ApplicationArea = All;
+                    Caption = 'Order Imports';
 
-                    CalculateState();
-
-                    CurrPage.Update(false);
-
-                    Message(
-                        '%1 open Shopify demo Sales Order(s) deleted.',
-                        DeletedCount);
-                end;
+                    RunObject =
+                        page "Shopify Order Imports";
+                }
             }
 
-            action(PrepareFreshDemo)
+            group(FinanceActions)
             {
-                ApplicationArea = All;
-                Caption = 'Prepare Fresh Demo Session';
+                Caption = 'Finance';
 
-                Promoted = true;
-                PromotedCategory = Process;
+                group(FinancePaymentActions)
+                {
+                    Caption = 'Payments';
 
-                trigger OnAction()
-                var
-                    AdminMgt:
-                        Codeunit "Shopify Admin Mgt.";
+                    action(OpenPaymentEntriesBase)
+                    {
+                        ApplicationArea = All;
+                        Caption = 'Shopify Payment Entries';
 
-                    DeletedSalesOrders: Integer;
-                begin
-                    if not Confirm(
-                        'Prepare a fresh demonstration session?\This will delete OPEN Shopify demo Sales Orders and clear Order Buffer, Order Import Registry and Sync Log. Product mappings, products, inventory, Shopify connection and configuration will remain unchanged. The import cutoff will be moved to now.',
-                        false)
-                    then
-                        exit;
+                        RunObject =
+                            page "Shopify Payment Entries";
+                    }
+                }
 
-                    AdminMgt.PrepareFreshDemoSession(
-                        DeletedSalesOrders);
+                group(FinanceRefundActions)
+                {
+                    Caption = 'Refunds';
 
-                    Rec.Get(
-                        'SETUP');
+                    action(OpenRefundEntriesBase)
+                    {
+                        ApplicationArea = All;
+                        Caption = 'Shopify Refund Entries';
 
-                    CalculateState();
+                        RunObject =
+                            page "Shopify Refund Entries";
+                    }
 
-                    CurrPage.Update(false);
+                    action(OpenOrderLineMappingsBase)
+                    {
+                        ApplicationArea = All;
+                        Caption = 'Shopify Order Line Mappings';
 
-                    Message(
-                        'Fresh demo session prepared successfully.\Deleted BC Sales Orders: %1\Import cutoff: %2',
-                        DeletedSalesOrders,
-                        Rec."Import Orders From");
-                end;
+                        RunObject =
+                            page "Shopify Order Line Mappings";
+                    }
+                }
+
+                group(FinancePayoutActions)
+                {
+                    Caption = 'Payouts';
+
+                    action(OpenPayoutEntriesBase)
+                    {
+                        ApplicationArea = All;
+                        Caption = 'Shopify Payout Entries';
+
+                        RunObject =
+                            page "Shopify Payout Entries";
+                    }
+                }
             }
 
-            action(OpenIntegrationSetup)
+            group(FulfillmentActions)
             {
-                ApplicationArea = All;
-                Caption = 'Integration Setup';
+                Caption = 'Fulfillment';
 
-                RunObject =
-                    page "Shopify Integration Setup";
+                action(OpenFulfillmentEntriesBase)
+                {
+                    ApplicationArea = All;
+                    Caption = 'Shopify Fulfillment Entries';
+
+                    RunObject =
+                        page "Shopify Fulfillment Entries";
+                }
             }
 
-            action(OpenIntegrationStatus)
+            group(MonitoringActions)
             {
-                ApplicationArea = All;
-                Caption = 'Integration Status';
+                Caption = 'Automation & Monitoring';
 
-                RunObject =
-                    page "Shopify Integration Status";
+                action(OpenSyncLog)
+                {
+                    ApplicationArea = All;
+                    Caption = 'Sync Log';
+
+                    RunObject =
+                        page "Shopify Sync Log";
+                }
+
+                action(OpenJobQueue)
+                {
+                    ApplicationArea = All;
+                    Caption = 'Job Queue Entries';
+
+                    RunObject =
+                        page "Job Queue Entries";
+                }
             }
 
-            action(OpenProductMappings)
+            group(DemoMaintenanceActions)
             {
-                ApplicationArea = All;
-                Caption = 'Product Mappings';
+                Caption = 'Demo & Maintenance';
 
-                RunObject =
-                    page "Shopify Product Mappings";
-            }
+                action(SetCutoffNow)
+                {
+                    ApplicationArea = All;
+                    Caption = 'Set Import Cutoff to Now';
 
-            action(OpenOrderBuffer)
-            {
-                ApplicationArea = All;
-                Caption = 'Order Buffer';
+                    trigger OnAction()
+                    var
+                        AdminMgt:
+                            Codeunit "Shopify Admin Mgt.";
+                    begin
+                        AdminMgt.SetImportCutoffToNow();
 
-                RunObject =
-                    page "Shopify Order Buffer";
-            }
+                        Rec.Get(
+                            'SETUP');
 
-            action(OpenOrderImports)
-            {
-                ApplicationArea = All;
-                Caption = 'Order Imports';
+                        CalculateState();
 
-                RunObject =
-                    page "Shopify Order Imports";
-            }
+                        CurrPage.Update(false);
 
-            action(OpenSyncLog)
-            {
-                ApplicationArea = All;
-                Caption = 'Sync Log';
+                        Message(
+                            'Shopify order import cutoff was set to the current date and time.');
+                    end;
+                }
 
-                RunObject =
-                    page "Shopify Sync Log";
-            }
+                action(ClearRuntimeHistory)
+                {
+                    ApplicationArea = All;
+                    Caption = 'Clear Runtime History';
 
-            action(OpenJobQueue)
-            {
-                ApplicationArea = All;
-                Caption = 'Job Queue Entries';
+                    trigger OnAction()
+                    var
+                        AdminMgt:
+                            Codeunit "Shopify Admin Mgt.";
+                    begin
+                        if not Confirm(
+                            'Clear transient Shopify Order Buffer and Sync Log history? Order, refund and payout cutoffs will be moved to the current time. Durable import, line-mapping, payment, fulfillment, refund and payout registries, plus posted Business Central documents and ledger entries, will be preserved.',
+                            false)
+                        then
+                            exit;
 
-                RunObject =
-                    page "Job Queue Entries";
+                        AdminMgt.ClearRuntimeHistory();
+
+                        Rec.Get(
+                            'SETUP');
+
+                        CalculateState();
+
+                        CurrPage.Update(false);
+
+                        Message(
+                            'Shopify integration runtime history was cleared successfully.');
+                    end;
+                }
+
+                action(DeleteOpenDemoOrders)
+                {
+                    ApplicationArea = All;
+                    Caption = 'Delete Open Demo Sales Orders';
+
+                    trigger OnAction()
+                    var
+                        AdminMgt:
+                            Codeunit "Shopify Admin Mgt.";
+
+                        DeletedCount: Integer;
+                    begin
+                        if not Confirm(
+                            'Delete all OPEN Business Central Sales Orders linked to Shopify import registry records? Posted documents are not affected.',
+                            false)
+                        then
+                            exit;
+
+                        DeletedCount :=
+                            AdminMgt.DeleteOpenDemoSalesOrders();
+
+                        CalculateState();
+
+                        CurrPage.Update(false);
+
+                        Message(
+                            '%1 open Shopify demo Sales Order(s) deleted.',
+                            DeletedCount);
+                    end;
+                }
+
+                action(PrepareFreshDemo)
+                {
+                    ApplicationArea = All;
+                    Caption = 'Prepare Fresh Demo Session';
+
+                    trigger OnAction()
+                    var
+                        AdminMgt:
+                            Codeunit "Shopify Admin Mgt.";
+
+                        DeletedSalesOrders: Integer;
+                    begin
+                        if not Confirm(
+                            'Prepare a fresh demonstration session?\This will delete OPEN Shopify demo Sales Orders and clear Order Buffer, Order Import Registry, Shopify Payment Entries, Shopify Fulfillment Entries and Sync Log. Posted documents and ledger entries are not deleted. Product mappings, products, inventory, Shopify connection and configuration will remain unchanged. The import cutoff will be moved to now.',
+                            false)
+                        then
+                            exit;
+
+                        AdminMgt.PrepareFreshDemoSession(
+                            DeletedSalesOrders);
+
+                        Rec.Get(
+                            'SETUP');
+
+                        CalculateState();
+
+                        CurrPage.Update(false);
+
+                        Message(
+                            'Fresh demo session prepared successfully.\Deleted BC Sales Orders: %1\Import cutoff: %2',
+                            DeletedSalesOrders,
+                            Rec."Import Orders From");
+                    end;
+                }
             }
         }
     }
@@ -504,12 +696,17 @@ page 50198 "Shopify Administration Center"
         Location:
             Record Location;
 
+        LocationMapping:
+            Record "Shopify Location Mapping";
+
         ShippingItem:
             Record Item;
 
         JobInterval: Integer;
 
         JobError: Text;
+        LocationConfigured: Boolean;
+        DefaultLocationConfigured: Boolean;
     begin
         CurrentCompany :=
             CompanyName();
@@ -561,20 +758,38 @@ page 50198 "Shopify Administration Center"
         MasterDataConfigured :=
             false;
 
+        LocationConfigured := false;
+        DefaultLocationConfigured := false;
+
+        if Rec."Use Location Mappings" then begin
+            LocationMapping.SetRange(Active, true);
+            LocationMapping.SetFilter("BC Location Code", '<>%1', '');
+            LocationMapping.SetFilter("Shopify Location ID", '<>%1', '');
+
+            if LocationMapping.FindSet() then
+                repeat
+                    if Location.Get(LocationMapping."BC Location Code") then begin
+                        LocationConfigured := true;
+
+                        if LocationMapping."Default for Order Imports" then
+                            DefaultLocationConfigured := true;
+                    end;
+                until LocationMapping.Next() = 0;
+
+            LocationConfigured :=
+                LocationConfigured and
+                DefaultLocationConfigured;
+        end else
+            if Rec."BC Location Code" <> '' then
+                LocationConfigured :=
+                    Location.Get(Rec."BC Location Code");
+
         if Rec."BC Customer No." <> '' then
-            if Customer.Get(
-                Rec."BC Customer No.")
-            then
-                if Rec."BC Location Code" <> '' then
-                    if Location.Get(
-                        Rec."BC Location Code")
-                    then
-                        if Rec."BC Shipping Item No." <> '' then
-                            if ShippingItem.Get(
-                                Rec."BC Shipping Item No.")
-                            then
-                                MasterDataConfigured :=
-                                    true;
+            if Customer.Get(Rec."BC Customer No.") then
+                if LocationConfigured then
+                    if Rec."BC Shipping Item No." <> '' then
+                        if ShippingItem.Get(Rec."BC Shipping Item No.") then
+                            MasterDataConfigured := true;
 
         ProductMappingsReady :=
             MappedProductCount > 0;

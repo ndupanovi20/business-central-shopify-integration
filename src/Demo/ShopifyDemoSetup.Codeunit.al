@@ -960,6 +960,18 @@ codeunit 50196 "Shopify Demo Setup"
         TargetSetup."BC Shipping Item No." :=
             'SHOP-SHIPPING';
 
+        TargetSetup."Customer Strategy" :=
+            TargetSetup."Customer Strategy"::"Generic Customer";
+
+        TargetSetup."Apply Shopify Order Addresses" :=
+            true;
+
+        TargetSetup."Fallback to Generic Customer" :=
+            true;
+
+        TargetSetup."Use Location Mappings" :=
+            false;
+
         TargetSetup."Import Only Paid Orders" :=
             false;
 
@@ -967,6 +979,39 @@ codeunit 50196 "Shopify Demo Setup"
             false;
 
         TargetSetup."Auto Sync Inventory" :=
+            false;
+
+        TargetSetup."Auto Post Imported Orders" :=
+            false;
+
+        TargetSetup."Auto Record Shopify Payments" :=
+            false;
+
+        TargetSetup."Auto Import Shopify Refunds" :=
+            false;
+
+        TargetSetup."Auto Process Shopify Refunds" :=
+            false;
+
+        TargetSetup."Import Refunds From" :=
+            CurrentDateTime();
+
+        TargetSetup."Auto Create Fulfillment" :=
+            false;
+
+        TargetSetup."Auto Sync Fulfillment Tracking" :=
+            false;
+
+        TargetSetup."Auto Import Shopify Payouts" :=
+            false;
+
+        TargetSetup."Auto Post Paid Payouts" :=
+            false;
+
+        TargetSetup."Notify Customer on Fulfillment" :=
+            false;
+
+        TargetSetup."Require Tracking No." :=
             false;
 
         Clear(

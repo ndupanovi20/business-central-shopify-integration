@@ -6,12 +6,29 @@ codeunit 50121 "Shopify Inventory Sync"
         InventoryDecimal: Decimal)
     var
         ShopifySetup: Record "Shopify Integration Setup";
-        Quantity: Integer;
     begin
         if not ShopifySetup.Get('SETUP') then
             Error('Shopify Integration Setup does not exist.');
 
         ShopifySetup.TestField("Shopify Location ID");
+
+        SyncInventoryAtLocation(
+            InventoryItemId,
+            ItemNo,
+            InventoryDecimal,
+            ShopifySetup."Shopify Location ID");
+    end;
+
+    procedure SyncInventoryAtLocation(
+        InventoryItemId: Text;
+        ItemNo: Code[20];
+        InventoryDecimal: Decimal;
+        ShopifyLocationId: Text)
+    var
+        Quantity: Integer;
+    begin
+        if ShopifyLocationId = '' then
+            Error('Shopify Location ID must not be empty.');
 
         Quantity :=
             Round(
@@ -28,15 +45,15 @@ codeunit 50121 "Shopify Inventory Sync"
 
         if not IsInventoryActivated(
             InventoryItemId,
-            ShopifySetup."Shopify Location ID")
+            ShopifyLocationId)
         then
             ActivateInventory(
                 InventoryItemId,
-                ShopifySetup."Shopify Location ID");
+                ShopifyLocationId);
 
         SetOnHandQuantity(
             InventoryItemId,
-            ShopifySetup."Shopify Location ID",
+            ShopifyLocationId,
             Quantity,
             ItemNo);
     end;
