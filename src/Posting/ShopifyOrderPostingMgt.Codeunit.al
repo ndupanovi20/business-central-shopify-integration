@@ -41,10 +41,6 @@ codeunit 50217 "Shopify Order Posting Mgt."
         StartedAt: DateTime;
         ShopifyOrderId: Text;
     begin
-        if PostingMode = "Shopify Posting Mode"::None then
-            Error(
-                'Shopify posting mode must not be None.');
-
         ImportRecord.TestField(
             "Shopify Order ID");
 
@@ -154,20 +150,18 @@ codeunit 50217 "Shopify Order Posting Mgt."
     var
         ShopifySetup: Record "Shopify Integration Setup";
         SalesHeader: Record "Sales Header";
-        SalesBatchPostMgt: Codeunit "Sales Batch Post Mgt.";
+        SalesPost: Codeunit "Sales-Post";
+        PreviousShipmentNo: Code[20];
+        PreviousInvoiceNo: Code[20];
         PostingDate: Date;
         Ship: Boolean;
         Invoice: Boolean;
-        OriginalOrderNo: Code[20];
     begin
         GetSetup(
             ShopifySetup);
 
         ImportRecord.TestField(
             "BC Order No.");
-
-        OriginalOrderNo :=
-            ImportRecord."BC Order No.";
 
         GetOpenSalesOrder(
             ImportRecord,
@@ -183,26 +177,25 @@ codeunit 50217 "Shopify Order Posting Mgt."
                 ShopifySetup,
                 ImportRecord);
 
-        SalesHeader.SetRecFilter();
+        PreviousShipmentNo := ImportRecord."Posted Shipment No.";
+        PreviousInvoiceNo := ImportRecord."Posted Invoice No.";
+        SalesHeader.Validate("Posting Date", PostingDate);
+        SalesHeader.Ship := Ship;
+        SalesHeader.Invoice := Invoice;
+        SalesHeader.Modify(true);
 
-        SalesBatchPostMgt.RunBatch(
-            SalesHeader,
-            true,
-            PostingDate,
-            false,
-            false,
-            Ship,
-            Invoice);
+        // The outer Boolean Codeunit.Run owns the transaction. A failure must
+        // roll back both posting and the integration links, including manual-post events.
+        SalesPost.SetSuppressCommit(true);
+        SalesPost.Run(SalesHeader);
+        ImportRecord.Get(ImportRecord."Shopify Order ID");
 
-        ImportRecord.Get(
-            ImportRecord."Shopify Order ID");
-
-        CapturePostedDocuments(
-            ImportRecord,
-            OriginalOrderNo);
-
-        ValidateExpectedPostedDocuments(
-            ImportRecord);
+        if Ship and ((ImportRecord."Posted Shipment No." = '') or
+                     (ImportRecord."Posted Shipment No." = PreviousShipmentNo)) then
+            Error('Sales posting did not create a new shipment.');
+        if Invoice and ((ImportRecord."Posted Invoice No." = '') or
+                        (ImportRecord."Posted Invoice No." = PreviousInvoiceNo)) then
+            Error('Sales posting did not create a new invoice.');
 
         ImportRecord."Posting Status" :=
             ImportRecord."Posting Status"::Success;
@@ -223,6 +216,7 @@ codeunit 50217 "Shopify Order Posting Mgt."
         SuccessCount: Integer;
         ErrorCount: Integer;
     begin
+        QueueUnpostedOrders();
         while true do begin
             ImportRecord.Reset();
             ImportRecord.SetRange(
@@ -383,57 +377,58 @@ codeunit 50217 "Shopify Order Posting Mgt."
             WorkDate());
     end;
 
-    local procedure CapturePostedDocuments(
-        var ImportRecord: Record "Shopify Order Import";
-        OriginalOrderNo: Code[20])
+    procedure QueueUnpostedOrders()
     var
-        SalesShipmentHeader: Record "Sales Shipment Header";
-        SalesInvoiceHeader: Record "Sales Invoice Header";
+        ImportRecord: Record "Shopify Order Import";
+        SalesHeader: Record "Sales Header";
+        ShopifySetup: Record "Shopify Integration Setup";
     begin
-        SalesShipmentHeader.Reset();
-        SalesShipmentHeader.SetRange(
-            "Order No.",
-            OriginalOrderNo);
-
-        if SalesShipmentHeader.FindLast() then
-            ImportRecord."Posted Shipment No." :=
-                SalesShipmentHeader."No.";
-
-        SalesInvoiceHeader.Reset();
-        SalesInvoiceHeader.SetRange(
-            "Order No.",
-            OriginalOrderNo);
-
-        if SalesInvoiceHeader.FindLast() then
-            ImportRecord."Posted Invoice No." :=
-                SalesInvoiceHeader."No.";
+        GetSetup(ShopifySetup);
+        ImportRecord.SetRange("Posting Status", ImportRecord."Posting Status"::"Not Required");
+        if ImportRecord.FindSet(true) then
+            repeat
+                if SalesHeader.Get(SalesHeader."Document Type"::Order, ImportRecord."BC Order No.") then begin
+                    ImportRecord."Posting Status" := ImportRecord."Posting Status"::Pending;
+                    ImportRecord."Posting Mode Used" := ShopifySetup."Posting Mode";
+                    ImportRecord.Modify(false);
+                end;
+            until ImportRecord.Next() = 0;
     end;
 
-    local procedure ValidateExpectedPostedDocuments(
-        ImportRecord: Record "Shopify Order Import")
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"Sales-Post", 'OnAfterPostSalesDoc', '', false, false)]
+    local procedure OnAfterPostSalesDoc(
+        var SalesHeader: Record "Sales Header";
+        SalesShptHdrNo: Code[20];
+        SalesInvHdrNo: Code[20];
+        PreviewMode: Boolean)
+    var
+        ImportRecord: Record "Shopify Order Import";
     begin
-        case ImportRecord."Posting Mode Used" of
-            ImportRecord."Posting Mode Used"::Ship:
-                if ImportRecord."Posted Shipment No." = '' then
-                    Error(
-                        'Sales posting finished without creating a posted shipment.');
+        if PreviewMode or SalesHeader.IsTemporary() then
+            exit;
+        if SalesHeader."Document Type" <> SalesHeader."Document Type"::Order then
+            exit;
+        if (SalesShptHdrNo = '') and (SalesInvHdrNo = '') then
+            exit;
 
-            ImportRecord."Posting Mode Used"::Invoice:
-                if ImportRecord."Posted Invoice No." = '' then
-                    Error(
-                        'Sales posting finished without creating a posted invoice.');
-
-            ImportRecord."Posting Mode Used"::"Ship and Invoice":
-                begin
-                    if ImportRecord."Posted Shipment No." = '' then
-                        Error(
-                            'Sales posting finished without creating a posted shipment.');
-
-                    if ImportRecord."Posted Invoice No." = '' then
-                        Error(
-                            'Sales posting finished without creating a posted invoice.');
-                end;
-        end;
+        ImportRecord.SetRange("BC Order No.", SalesHeader."No.");
+        if not ImportRecord.FindFirst() then
+            exit;
+        if SalesShptHdrNo <> '' then
+            ImportRecord."Posted Shipment No." := SalesShptHdrNo;
+        if SalesInvHdrNo <> '' then
+            ImportRecord."Posted Invoice No." := SalesInvHdrNo;
+        if (SalesShptHdrNo <> '') and (SalesInvHdrNo <> '') then
+            ImportRecord."Posting Mode Used" := ImportRecord."Posting Mode Used"::"Ship and Invoice"
+        else
+            if SalesInvHdrNo <> '' then
+                ImportRecord."Posting Mode Used" := ImportRecord."Posting Mode Used"::Invoice
+            else
+                ImportRecord."Posting Mode Used" := ImportRecord."Posting Mode Used"::Ship;
+        ImportRecord."Posting Status" := ImportRecord."Posting Status"::Success;
+        ImportRecord."Posted At" := CurrentDateTime();
+        Clear(ImportRecord."Posting Error");
+        ImportRecord.Modify(false);
     end;
 
     local procedure GetSetup(

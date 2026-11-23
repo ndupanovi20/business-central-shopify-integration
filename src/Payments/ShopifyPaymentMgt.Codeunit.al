@@ -34,9 +34,6 @@ codeunit 50227 "Shopify Payment Mgt."
         ErrorText: Text;
         StartedAt: DateTime;
     begin
-        ValidateImportForPayment(
-            ImportRecord);
-
         ShopifyOrderId :=
             ImportRecord."Shopify Order ID";
 
@@ -193,8 +190,8 @@ codeunit 50227 "Shopify Payment Mgt."
                 'Shopify Order Import %1 does not exist.',
                 PaymentEntry."Shopify Order ID");
 
-        GetSetup(
-            ShopifySetup);
+        GetSetup(ShopifySetup);
+        ValidateImportForPayment(ImportRecord);
 
         ImportRecord.TestField(
             "Posted Invoice No.");

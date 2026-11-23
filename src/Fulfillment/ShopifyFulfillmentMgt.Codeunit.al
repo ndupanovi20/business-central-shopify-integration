@@ -32,106 +32,39 @@ codeunit 50245 "Shopify Fulfillment Mgt."
             CreatedCount + TrackingUpdateCount);
     end;
 
-    procedure ProcessEligibleFulfillments(
-        ShowResultMessage: Boolean): Integer
+    procedure ProcessEligibleFulfillments(ShowResultMessage: Boolean): Integer
     var
-        ImportRecord:
-            Record "Shopify Order Import";
-
-        FulfillmentEntry:
-            Record "Shopify Fulfillment Entry";
-
+        ImportRecord: Record "Shopify Order Import";
+        ShipmentImport: Record "Shopify Order Import";
+        SalesShipmentHeader: Record "Sales Shipment Header";
+        FulfillmentEntry: Record "Shopify Fulfillment Entry";
         CreatedCount: Integer;
-        WaitingCount: Integer;
-        ExistingCount: Integer;
         ErrorCount: Integer;
     begin
-        ImportRecord.Reset();
-
-        ImportRecord.SetRange(
-            "Posting Status",
-            ImportRecord."Posting Status"::Success);
-
-        ImportRecord.SetFilter(
-            "Posted Shipment No.",
-            '<>%1',
-            '');
-
+        ImportRecord.SetRange("Posting Status", ImportRecord."Posting Status"::Success);
         if ImportRecord.FindSet() then
             repeat
-                if FindFulfillmentEntry(
-                    ImportRecord."Shopify Order ID",
-                    ImportRecord."Posted Shipment No.",
-                    FulfillmentEntry)
-                then begin
-                    case FulfillmentEntry.Status of
-                        FulfillmentEntry.Status::Success,
-                        FulfillmentEntry.Status::Skipped:
-                            ExistingCount += 1;
-
-                        FulfillmentEntry.Status::Error:
-                            ErrorCount += 1;
-
-                        FulfillmentEntry.Status::Pending,
-                        FulfillmentEntry.Status::"Waiting for Tracking":
-                            begin
-                                if CreateFulfillmentForImport(
-                                    ImportRecord,
-                                    false)
-                                then
-                                    CreatedCount += 1
-                                else begin
-                                    FulfillmentEntry.Get(
-                                        FulfillmentEntry."Entry No.");
-
-                                    if FulfillmentEntry.Status =
-                                       FulfillmentEntry.Status::"Waiting for Tracking"
-                                    then
-                                        WaitingCount += 1
-                                    else
-                                        if FulfillmentEntry.Status =
-                                           FulfillmentEntry.Status::Error
-                                        then
-                                            ErrorCount += 1;
-                                end;
-                            end;
-                    end;
-                end else begin
-                    if CreateFulfillmentForImport(
-                        ImportRecord,
-                        false)
-                    then
-                        CreatedCount += 1
-                    else begin
-                        if FindFulfillmentEntry(
-                            ImportRecord."Shopify Order ID",
-                            ImportRecord."Posted Shipment No.",
-                            FulfillmentEntry)
+                SalesShipmentHeader.Reset();
+                SalesShipmentHeader.SetRange("Order No.", ImportRecord."BC Order No.");
+                if SalesShipmentHeader.FindSet() then
+                    repeat
+                        if not FindFulfillmentEntry(ImportRecord."Shopify Order ID", SalesShipmentHeader."No.", FulfillmentEntry) or
+                           (FulfillmentEntry.Status in [FulfillmentEntry.Status::Pending, FulfillmentEntry.Status::"Waiting for Tracking"])
                         then begin
-                            if FulfillmentEntry.Status =
-                               FulfillmentEntry.Status::"Waiting for Tracking"
-                            then
-                                WaitingCount += 1
+                            ShipmentImport := ImportRecord;
+                            ShipmentImport."Posted Shipment No." := SalesShipmentHeader."No.";
+                            if CreateFulfillmentForImport(ShipmentImport, false) then
+                                CreatedCount += 1
                             else
-                                if FulfillmentEntry.Status =
-                                   FulfillmentEntry.Status::Error
-                                then
-                                    ErrorCount += 1;
+                                if FindFulfillmentEntry(ShipmentImport."Shopify Order ID", SalesShipmentHeader."No.", FulfillmentEntry) then
+                                    if FulfillmentEntry.Status = FulfillmentEntry.Status::Error then
+                                        ErrorCount += 1;
                         end;
-                    end;
-                end;
+                    until SalesShipmentHeader.Next() = 0;
             until ImportRecord.Next() = 0;
-
         if ShowResultMessage then
-            Message(
-                'Shopify fulfillment processing completed.\Created: %1\Waiting for tracking: %2\Already completed/skipped: %3\Errors requiring retry: %4',
-                CreatedCount,
-                WaitingCount,
-                ExistingCount,
-                ErrorCount);
-
-        exit(
-            CreatedCount);
+            Message('Shopify fulfillment processing completed.\Created: %1\Failed: %2', CreatedCount, ErrorCount);
+        exit(CreatedCount);
     end;
 
     procedure CreateFulfillmentForImport(
@@ -359,8 +292,8 @@ codeunit 50245 "Shopify Fulfillment Mgt."
                 'Shopify Order Import %1 does not exist.',
                 FulfillmentEntry."Shopify Order ID");
 
-        ValidateImportForFulfillment(
-            ImportRecord);
+        ImportRecord."Posted Shipment No." := FulfillmentEntry."Posted Shipment No.";
+        ValidateImportForFulfillment(ImportRecord);
 
         if not SalesShipmentHeader.Get(
             ImportRecord."Posted Shipment No.")
@@ -404,6 +337,7 @@ codeunit 50245 "Shopify Fulfillment Mgt."
 
         GetOpenFulfillmentOrders(
             FulfillmentEntry."Shopify Order ID",
+            FulfillmentEntry."Posted Shipment No.",
             ShopifyLocationId,
             LineItemsByFulfillmentOrder,
             FulfillmentOrderIdsText,
@@ -556,6 +490,7 @@ codeunit 50245 "Shopify Fulfillment Mgt."
             if ImportRecord.Get(
                 FulfillmentEntry."Shopify Order ID")
             then begin
+                ImportRecord."Posted Shipment No." := FulfillmentEntry."Posted Shipment No.";
                 if CreateFulfillmentForImport(
                     ImportRecord,
                     false)
@@ -587,10 +522,8 @@ codeunit 50245 "Shopify Fulfillment Mgt."
                 'Shopify Order Import %1 does not exist.',
                 FulfillmentEntry."Shopify Order ID");
 
-        exit(
-            CreateFulfillmentForImport(
-                ImportRecord,
-                ShowResultMessage));
+        ImportRecord."Posted Shipment No." := FulfillmentEntry."Posted Shipment No.";
+        exit(CreateFulfillmentForImport(ImportRecord, ShowResultMessage));
     end;
 
     procedure ProcessTrackingUpdates(
@@ -850,10 +783,6 @@ codeunit 50245 "Shopify Fulfillment Mgt."
         SalesShipmentHeader:
             Record "Sales Shipment Header";
 
-        LocationMgt:
-            Codeunit "Shopify Location Mgt.";
-
-        ShopifyLocationId: Text;
     begin
         GetSetup(
             ShopifySetup);
@@ -872,10 +801,6 @@ codeunit 50245 "Shopify Fulfillment Mgt."
                 'Posted Sales Shipment %1 does not exist.',
                 ImportRecord."Posted Shipment No.");
 
-        ShopifyLocationId :=
-            LocationMgt.ResolveShopifyLocationId(
-                SalesShipmentHeader."Location Code");
-
         FulfillmentEntry.Init();
 
         FulfillmentEntry."Shopify Order ID" :=
@@ -889,13 +814,6 @@ codeunit 50245 "Shopify Fulfillment Mgt."
 
         FulfillmentEntry."Posted Shipment No." :=
             ImportRecord."Posted Shipment No.";
-
-        FulfillmentEntry."Shopify Location ID" :=
-            CopyStr(
-                ShopifyLocationId,
-                1,
-                MaxStrLen(
-                    FulfillmentEntry."Shopify Location ID"));
 
         FulfillmentEntry.Status :=
             FulfillmentEntry.Status::Pending;
@@ -952,216 +870,184 @@ codeunit 50245 "Shopify Fulfillment Mgt."
 
     local procedure GetOpenFulfillmentOrders(
         ShopifyOrderId: Text;
+        ShipmentNo: Code[20];
         ShopifyLocationId: Text;
         var LineItemsByFulfillmentOrder: JsonArray;
         var FulfillmentOrderIdsText: Text;
         var AlreadyClosed: Boolean)
     var
-        ShopifyClient:
-            Codeunit "Shopify Client";
-
-        Variables:
-            JsonObject;
-
-        ResponseJson:
-            JsonObject;
-
-        DataObject:
-            JsonObject;
-
-        OrderObject:
-            JsonObject;
-
-        FulfillmentOrdersObject:
-            JsonObject;
-
-        FulfillmentOrderObject:
-            JsonObject;
-
-        AssignedLocationObject:
-            JsonObject;
-
-        LocationObject:
-            JsonObject;
-
-        FulfillmentOrderInput:
-            JsonObject;
-
-        NodesArray:
-            JsonArray;
-
-        Token:
-            JsonToken;
-
+        ShopifyClient: Codeunit "Shopify Client";
+        ShopifySetup: Record "Shopify Integration Setup";
+        ShipmentLine: Record "Sales Shipment Line";
+        Mapping: Record "Shopify Order Line Mapping";
+        Needed: Dictionary of [Text, Decimal];
+        Variables: JsonObject;
+        Response: JsonObject;
+        DataObject: JsonObject;
+        OrderObject: JsonObject;
+        Connection: JsonObject;
+        PageInfo: JsonObject;
+        FulfillmentOrder: JsonObject;
+        AssignedLocation: JsonObject;
+        LocationObject: JsonObject;
+        InputObject: JsonObject;
+        LineInputs: JsonArray;
+        Nodes: JsonArray;
+        Token: JsonToken;
+        Cursor: Text;
         QueryText: Text;
-        FulfillmentOrderId: Text;
-        StatusText: Text;
-        LocationId: Text;
-        BlockingStatuses: Text;
-
+        OrderId: Text;
+        LineId: Text;
+        Quantity: Decimal;
+        HasNextPage: Boolean;
         I: Integer;
-        MatchingLocationCount: Integer;
-        ClosedCount: Integer;
-        OtherLocationCount: Integer;
     begin
-        Clear(
-            LineItemsByFulfillmentOrder);
-
-        FulfillmentOrderIdsText :=
-            '';
-
-        AlreadyClosed :=
-            false;
-
-        Variables.Add(
-            'id',
-            ShopifyOrderId);
+        GetSetup(ShopifySetup);
+        Clear(LineItemsByFulfillmentOrder);
+        FulfillmentOrderIdsText := '';
+        AlreadyClosed := false;
+        ShipmentLine.SetRange("Document No.", ShipmentNo);
+        ShipmentLine.SetRange(Type, ShipmentLine.Type::Item);
+        ShipmentLine.SetFilter(Quantity, '>0');
+        if ShipmentLine.FindSet() then
+            repeat
+                Mapping.Reset();
+                Mapping.SetRange("Shopify Order ID", ShopifyOrderId);
+                Mapping.SetRange("BC Order No.", ShipmentLine."Order No.");
+                Mapping.SetRange("BC Order Line No.", ShipmentLine."Order Line No.");
+                if Mapping.FindFirst() then begin
+                    LineId := Mapping."Shopify Line Item ID";
+                    if Needed.Get(LineId, Quantity) then
+                        Needed.Set(LineId, Quantity + ShipmentLine.Quantity)
+                    else
+                        Needed.Add(LineId, ShipmentLine.Quantity);
+                end else
+                    if ShipmentLine."No." <> ShopifySetup."BC Shipping Item No." then
+                        Error('Shipment %1 line %2 has no Shopify order line mapping.', ShipmentNo, ShipmentLine."Line No.");
+            until ShipmentLine.Next() = 0;
+        if Needed.Count() = 0 then
+            Error('Posted shipment %1 contains no mapped Shopify item quantities.', ShipmentNo);
 
         QueryText :=
-            'query GetOrderFulfillmentOrders($id: ID!) {' +
-            ' order(id: $id) {' +
-            '  id' +
-            '  fulfillmentOrders(first: 50) {' +
-            '   nodes {' +
-            '    id' +
-            '    status' +
-            '    assignedLocation {' +
-            '     location { id }' +
-            '    }' +
-            '   }' +
-            '  }' +
-            ' }' +
-            '}';
-
-        ShopifyClient.ExecuteGraphQL(
-            QueryText,
-            Variables,
-            ResponseJson);
-
-        DataObject :=
-            ShopifyClient.GetObject(
-                ResponseJson,
-                'data');
-
-        OrderObject :=
-            ShopifyClient.GetObject(
-                DataObject,
-                'order');
-
-        FulfillmentOrdersObject :=
-            ShopifyClient.GetObject(
-                OrderObject,
-                'fulfillmentOrders');
-
-        NodesArray :=
-            ShopifyClient.GetArray(
-                FulfillmentOrdersObject,
-                'nodes');
-
-        if NodesArray.Count() = 0 then
-            Error(
-                'Shopify order has no fulfillment orders.');
-
-        for I := 0 to NodesArray.Count() - 1 do begin
-            NodesArray.Get(
-                I,
-                Token);
-
-            FulfillmentOrderObject :=
-                Token.AsObject();
-
-            FulfillmentOrderId :=
-                ShopifyClient.GetText(
-                    FulfillmentOrderObject,
-                    'id');
-
-            StatusText :=
-                UpperCase(
-                    ShopifyClient.GetText(
-                        FulfillmentOrderObject,
-                        'status'));
-
-            AssignedLocationObject :=
-                ShopifyClient.GetObject(
-                    FulfillmentOrderObject,
-                    'assignedLocation');
-
-            LocationObject :=
-                ShopifyClient.GetObject(
-                    AssignedLocationObject,
-                    'location');
-
-            LocationId :=
-                ShopifyClient.GetText(
-                    LocationObject,
-                    'id');
-
-            if LocationId = ShopifyLocationId then begin
-                MatchingLocationCount += 1;
-
-                case StatusText of
-                    'OPEN':
-                        begin
-                            AddFulfillmentOrderIdToText(
-                                FulfillmentOrderIdsText,
-                                FulfillmentOrderId);
-
-                            Clear(
-                                FulfillmentOrderInput);
-
-                            FulfillmentOrderInput.Add(
-                                'fulfillmentOrderId',
-                                FulfillmentOrderId);
-
-                            LineItemsByFulfillmentOrder.Add(
-                                FulfillmentOrderInput);
-                        end;
-
-                    'CLOSED':
-                        ClosedCount += 1;
-
-                    else begin
-                        if BlockingStatuses <> '' then
-                            BlockingStatuses +=
-                                ', ';
-
-                        BlockingStatuses +=
-                            StatusText;
+            'query ShipmentFulfillmentOrders($id: ID!, $after: String) {' +
+            ' order(id: $id) { fulfillmentOrders(first: 50, after: $after) {' +
+            ' nodes { id status assignedLocation { location { id } } }' +
+            ' pageInfo { hasNextPage endCursor } } } }';
+        repeat
+            Clear(Variables);
+            Variables.Add('id', ShopifyOrderId);
+            if Cursor <> '' then
+                Variables.Add('after', Cursor);
+            ShopifyClient.ExecuteGraphQL(QueryText, Variables, Response);
+            DataObject := ShopifyClient.GetObject(Response, 'data');
+            OrderObject := ShopifyClient.GetObject(DataObject, 'order');
+            Connection := ShopifyClient.GetObject(OrderObject, 'fulfillmentOrders');
+            Nodes := ShopifyClient.GetArray(Connection, 'nodes');
+            for I := 0 to Nodes.Count() - 1 do begin
+                Nodes.Get(I, Token);
+                FulfillmentOrder := Token.AsObject();
+                AssignedLocation := ShopifyClient.GetObject(FulfillmentOrder, 'assignedLocation');
+                LocationObject := ShopifyClient.GetObject(AssignedLocation, 'location');
+                if (ShopifyClient.GetText(LocationObject, 'id') = ShopifyLocationId) and
+                   (ShopifyClient.GetText(FulfillmentOrder, 'status') in ['OPEN', 'IN_PROGRESS'])
+                then begin
+                    OrderId := ShopifyClient.GetText(FulfillmentOrder, 'id');
+                    BuildFulfillmentLineInputs(OrderId, Needed, LineInputs);
+                    if LineInputs.Count() > 0 then begin
+                        Clear(InputObject);
+                        InputObject.Add('fulfillmentOrderId', OrderId);
+                        InputObject.Add('fulfillmentOrderLineItems', LineInputs);
+                        LineItemsByFulfillmentOrder.Add(InputObject);
+                        AddFulfillmentOrderIdToText(FulfillmentOrderIdsText, OrderId);
                     end;
                 end;
-            end else
-                OtherLocationCount += 1;
-        end;
+            end;
+            PageInfo := ShopifyClient.GetObject(Connection, 'pageInfo');
+            PageInfo.Get('hasNextPage', Token);
+            HasNextPage := Token.AsValue().AsBoolean();
+            Cursor := ShopifyClient.GetOptionalText(PageInfo, 'endCursor');
+            if HasNextPage and (Cursor = '') then
+                Error('Shopify fulfillment order pagination returned no cursor.');
+        until not HasNextPage;
 
-        if LineItemsByFulfillmentOrder.Count() > 0 then
-            exit;
+        foreach LineId in Needed.Keys() do
+            if Needed.Get(LineId) <> 0 then
+                Error('Shipment %1 cannot be matched to open Shopify fulfillment quantities for line %2. No fulfillment was sent. Check earlier remote attempts before retrying.', ShipmentNo, LineId);
+        if LineItemsByFulfillmentOrder.Count() = 0 then
+            Error('No Shopify fulfillment quantities are available for shipment %1.', ShipmentNo);
+    end;
 
-        if (MatchingLocationCount = 0) and
-           (OtherLocationCount > 0)
-        then
-            Error(
-                'Shopify fulfillment orders exist, but none are assigned to configured Shopify Location ID %1.',
-                ShopifyLocationId);
-
-        if MatchingLocationCount = 0 then
-            Error(
-                'No Shopify fulfillment order was found for configured location %1.',
-                ShopifyLocationId);
-
-        if ClosedCount = MatchingLocationCount then begin
-            AlreadyClosed :=
-                true;
-
-            exit;
-        end;
-
-        if BlockingStatuses <> '' then
-            Error(
-                'Shopify fulfillment orders at configured location are not ready for fulfillment. Current status(es): %1.',
-                BlockingStatuses);
-
-        Error(
-            'No OPEN Shopify fulfillment order is available for fulfillment.');
+    local procedure BuildFulfillmentLineInputs(
+        FulfillmentOrderId: Text;
+        var Needed: Dictionary of [Text, Decimal];
+        var LineInputs: JsonArray)
+    var
+        ShopifyClient: Codeunit "Shopify Client";
+        Variables: JsonObject;
+        Response: JsonObject;
+        DataObject: JsonObject;
+        NodeObject: JsonObject;
+        Connection: JsonObject;
+        PageInfo: JsonObject;
+        LineObject: JsonObject;
+        ItemObject: JsonObject;
+        InputObject: JsonObject;
+        Nodes: JsonArray;
+        Token: JsonToken;
+        LineId: Text;
+        Cursor: Text;
+        QueryText: Text;
+        RequiredQuantity: Decimal;
+        Quantity: Integer;
+        HasNextPage: Boolean;
+        I: Integer;
+    begin
+        Clear(LineInputs);
+        QueryText :=
+            'query ShipmentFulfillmentLines($id: ID!, $after: String) {' +
+            ' node(id: $id) { ... on FulfillmentOrder {' +
+            ' lineItems(first: 250, after: $after) {' +
+            ' nodes { id remainingQuantity lineItem { id } }' +
+            ' pageInfo { hasNextPage endCursor } } } } }';
+        repeat
+            Clear(Variables);
+            Variables.Add('id', FulfillmentOrderId);
+            if Cursor <> '' then
+                Variables.Add('after', Cursor);
+            ShopifyClient.ExecuteGraphQL(QueryText, Variables, Response);
+            DataObject := ShopifyClient.GetObject(Response, 'data');
+            NodeObject := ShopifyClient.GetObject(DataObject, 'node');
+            Connection := ShopifyClient.GetObject(NodeObject, 'lineItems');
+            Nodes := ShopifyClient.GetArray(Connection, 'nodes');
+            for I := 0 to Nodes.Count() - 1 do begin
+                Nodes.Get(I, Token);
+                LineObject := Token.AsObject();
+                ItemObject := ShopifyClient.GetObject(LineObject, 'lineItem');
+                LineId := ShopifyClient.GetText(ItemObject, 'id');
+                if Needed.Get(LineId, RequiredQuantity) then
+                    if RequiredQuantity > 0 then begin
+                        if RequiredQuantity <> Round(RequiredQuantity, 1) then
+                            Error('Shopify fulfillment requires whole item quantities.');
+                        LineObject.Get('remainingQuantity', Token);
+                        Quantity := Token.AsValue().AsInteger();
+                        if Quantity > RequiredQuantity then
+                            Quantity := RequiredQuantity;
+                        if Quantity > 0 then begin
+                            Clear(InputObject);
+                            InputObject.Add('id', ShopifyClient.GetText(LineObject, 'id'));
+                            InputObject.Add('quantity', Quantity);
+                            LineInputs.Add(InputObject);
+                            Needed.Set(LineId, RequiredQuantity - Quantity);
+                        end;
+                    end;
+            end;
+            PageInfo := ShopifyClient.GetObject(Connection, 'pageInfo');
+            PageInfo.Get('hasNextPage', Token);
+            HasNextPage := Token.AsValue().AsBoolean();
+            Cursor := ShopifyClient.GetOptionalText(PageInfo, 'endCursor');
+            if HasNextPage and (Cursor = '') then
+                Error('Shopify fulfillment line pagination returned no cursor.');
+        until not HasNextPage;
     end;
 
     local procedure CreateShopifyFulfillment(

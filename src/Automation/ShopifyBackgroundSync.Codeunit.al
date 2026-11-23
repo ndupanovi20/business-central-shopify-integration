@@ -8,12 +8,14 @@ codeunit 50190 "Shopify Background Sync"
     end;
 
     procedure RunNow()
+    var
+        ShopifySetup: Record "Shopify Integration Setup";
     begin
         ExecuteSynchronization();
-
-        if GuiAllowed() then
-            Message(
-                'Shopify background synchronization completed.');
+        if GuiAllowed() then begin
+            ShopifySetup.Get('SETUP');
+            Message('%1', ShopifySetup."Last Background Result");
+        end;
     end;
 
     local procedure ExecuteSynchronization()
@@ -66,6 +68,7 @@ codeunit 50190 "Shopify Background Sync"
         SyncLogMgt:
             Codeunit "Shopify Sync Log Mgt.";
 
+        RunErrors: Record "Shopify Sync Log";
         StartedAt: DateTime;
 
         ImportedOrders: Integer;
@@ -86,6 +89,7 @@ codeunit 50190 "Shopify Background Sync"
         PayoutErrorText: Text;
 
         HasErrors: Boolean;
+        OutstandingErrors: Integer;
     begin
         StartedAt :=
             CurrentDateTime();
@@ -503,9 +507,16 @@ codeunit 50190 "Shopify Background Sync"
             end;
         end;
 
-        UpdateSetupResult(
-            ShopifySetup,
-            ResultText);
+        OutstandingErrors := CountOutstandingErrors(ShopifySetup);
+        RunErrors.SetRange(Status, RunErrors.Status::Error);
+        RunErrors.SetFilter("Created At", '>=%1', StartedAt);
+        if (OutstandingErrors > 0) or not RunErrors.IsEmpty() then
+            HasErrors := true;
+        if HasErrors then
+            ResultText := StrSubstNo('Errors require attention. Outstanding records: %1. Errors logged this run: %2. %3',
+                OutstandingErrors, RunErrors.Count(), ResultText);
+
+        UpdateSetupResult(ShopifySetup, ResultText);
 
         if HasErrors then
             SyncLogMgt.LogError(
@@ -523,6 +534,59 @@ codeunit 50190 "Shopify Background Sync"
                 '',
                 ResultText,
                 CurrentDateTime() - StartedAt);
+
+        // Persist record errors and the summary before reporting failure to Job Queue.
+        if HasErrors and not GuiAllowed() then begin
+            Commit();
+            Error('%1', ResultText);
+        end;
+    end;
+
+    local procedure CountOutstandingErrors(ShopifySetup: Record "Shopify Integration Setup"): Integer
+    var
+        Buffer: Record "Shopify Order Buffer";
+        ImportRecord: Record "Shopify Order Import";
+        Payment: Record "Shopify Payment Entry";
+        Payout: Record "Shopify Payout Entry";
+        Refund: Record "Shopify Refund Entry";
+        Fulfillment: Record "Shopify Fulfillment Entry";
+        ErrorCount: Integer;
+    begin
+        if ShopifySetup."Auto Import Orders" then begin
+            Buffer.SetRange(Status, Buffer.Status::Error);
+            ErrorCount += Buffer.Count();
+            if ShopifySetup."Tag Imported Orders" then begin
+                ImportRecord.SetRange("Tag Status", ImportRecord."Tag Status"::Error);
+                ErrorCount += ImportRecord.Count();
+                ImportRecord.Reset();
+            end;
+        end;
+        if ShopifySetup."Auto Post Imported Orders" then begin
+            ImportRecord.SetRange("Posting Status", ImportRecord."Posting Status"::Error);
+            ErrorCount += ImportRecord.Count();
+        end;
+        if ShopifySetup."Auto Record Shopify Payments" then begin
+            Payment.SetRange(Status, Payment.Status::Error);
+            ErrorCount += Payment.Count();
+        end;
+        if ShopifySetup."Auto Import Shopify Payouts" or ShopifySetup."Auto Post Paid Payouts" then begin
+            Payout.SetRange("Processing Status", Payout."Processing Status"::Error);
+            ErrorCount += Payout.Count();
+        end;
+        if ShopifySetup."Auto Import Shopify Refunds" or ShopifySetup."Auto Process Shopify Refunds" then begin
+            Refund.SetRange(Status, Refund.Status::Error);
+            ErrorCount += Refund.Count();
+        end;
+        if ShopifySetup."Auto Create Fulfillment" then begin
+            Fulfillment.SetRange(Status, Fulfillment.Status::Error);
+            ErrorCount += Fulfillment.Count();
+            Fulfillment.Reset();
+        end;
+        if ShopifySetup."Auto Sync Fulfillment Tracking" then begin
+            Fulfillment.SetFilter("Tracking Error", '<>%1', '');
+            ErrorCount += Fulfillment.Count();
+        end;
+        exit(ErrorCount);
     end;
 
     local procedure PrepareRunResult(

@@ -1,0 +1,19 @@
+{
+    "id": "6e1dc972-cb93-49be-a412-da7fc385dd47",
+    "name": "BC Shopify Integration Tests",
+    "publisher": "Nimaj Dupanovic",
+    "version": "1.6.1.0",
+    "application": "27.0.0.0",
+    "platform": "1.0.0.0",
+    "runtime": "16.1",
+    "target": "OnPrem",
+    "idRanges": [{"from": 50320, "to": 50329}],
+    "dependencies": [{
+        "id": "d4d00f7d-a735-4504-86f6-bffb7ef7c783",
+        "name": "BC Shopify Integration",
+        "publisher": "Nimaj Dupanovic",
+        "version": "1.6.1.0"
+    }],
+    "preprocessorSymbols": ["SHOPIFY_TESTS"],
+    "features": ["NoImplicitWith"]
+}

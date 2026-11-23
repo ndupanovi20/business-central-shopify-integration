@@ -66,6 +66,11 @@ page 50274 "Shopify Refund Lines"
                     ApplicationArea = All;
                 }
 
+                field("BC Return Location Code"; Rec."BC Return Location Code")
+                {
+                    ApplicationArea = All;
+                }
+
                 field("Posted Invoice No."; Rec."Posted Invoice No.")
                 {
                     ApplicationArea = All;

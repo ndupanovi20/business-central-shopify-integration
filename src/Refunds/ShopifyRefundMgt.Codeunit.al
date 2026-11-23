@@ -572,7 +572,6 @@ codeunit 50277 "Shopify Refund Mgt."
             RefundEntry,
             ImportRecord,
             RefundObject,
-            ShopifySetup,
             ManualReason,
             TransactionWaiting);
 
@@ -617,12 +616,13 @@ codeunit 50277 "Shopify Refund Mgt."
         var RefundEntry: Record "Shopify Refund Entry";
         ImportRecord: Record "Shopify Order Import";
         RefundObject: JsonObject;
-        ShopifySetup: Record "Shopify Integration Setup";
         var ManualReason: Text;
         var TransactionWaiting: Boolean)
     var
         RefundLine: Record "Shopify Refund Line";
         ShopifyClient: Codeunit "Shopify Client";
+        LocationMgt: Codeunit "Shopify Location Mgt.";
+        ReturnLocationCode: Code[10];
         RefundLineItemsObject: JsonObject;
         RefundShippingObject: JsonObject;
         AdjustmentsObject: JsonObject;
@@ -706,6 +706,12 @@ codeunit 50277 "Shopify Refund Mgt."
                 RefundLine."Subtotal Amount" := SubtotalAmount;
                 RefundLine."Tax Amount" := TaxAmount;
                 RefundLine."Total Amount" := SubtotalAmount + TaxAmount;
+                if LocationId <> '' then
+                    if LocationMgt.TryResolveBCLocation(LocationId, ReturnLocationCode) then
+                        RefundLine."BC Return Location Code" := ReturnLocationCode
+                    else
+                        AppendManualReason(ManualReason,
+                            StrSubstNo('Refund restock location %1 has no active Business Central mapping.', LocationId));
 
                 ResolveLineMappingForRefund(
                     ImportRecord,
@@ -724,20 +730,6 @@ codeunit 50277 "Shopify Refund Mgt."
                             'Refund line %1 uses restock type %2. Automatic Business Central credit memo processing currently supports returned/restocked item lines only.',
                             RefundLine."Shopify SKU",
                             RestockType));
-
-                if ((RestockType = 'RETURN') or
-                    (RestockType = 'LEGACY_RESTOCK')) and
-                   (LocationId <> '') and
-                   (ShopifySetup."Shopify Location ID" <> '') and
-                   (LocationId <> ShopifySetup."Shopify Location ID")
-                then
-                    AppendManualReason(
-                        ManualReason,
-                        StrSubstNo(
-                            'Refund line %1 is restocked to Shopify location %2, while the integration is configured for %3.',
-                            RefundLine."Shopify SKU",
-                            LocationId,
-                            ShopifySetup."Shopify Location ID"));
 
                 if RefundLine."BC Item No." = '' then
                     AppendManualReason(
@@ -971,6 +963,8 @@ codeunit 50277 "Shopify Refund Mgt."
         SalesHeader.Insert(true);
 
         SalesHeader.Validate("Sell-to Customer No.", SalesInvoiceHeader."Sell-to Customer No.");
+        SalesHeader.Validate("Bill-to Customer No.", SalesInvoiceHeader."Bill-to Customer No.");
+        SalesHeader.Validate("Dimension Set ID", SalesInvoiceHeader."Dimension Set ID");
         if SalesInvoiceHeader."Location Code" <> '' then
             SalesHeader.Validate(
                 "Location Code",
@@ -1016,6 +1010,7 @@ codeunit 50277 "Shopify Refund Mgt."
         RefundEntry."BC Credit Memo No." := CreditMemoNo;
         RefundEntry.Modify(false);
 
+        SalesPost.SetSuppressCommit(true);
         SalesPost.Run(SalesHeader);
 
         SalesCrMemoHeader.Reset();
@@ -1042,8 +1037,6 @@ codeunit 50277 "Shopify Refund Mgt."
         RefundLine: Record "Shopify Refund Line";
         SalesInvoiceLine: Record "Sales Invoice Line";
         SalesLine: Record "Sales Line";
-        SalesShipmentLine: Record "Sales Shipment Line";
-        Item: Record Item;
         ShippingSubtotalExclVAT: Decimal;
         ShippingUnitPrice: Decimal;
         PreviouslyRefundedQuantity: Decimal;
@@ -1094,66 +1087,7 @@ codeunit 50277 "Shopify Refund Mgt."
                         PreviouslyRefundedQuantity,
                         RefundLine.Quantity);
 
-                LineNo += 10000;
-                SalesLine.Init();
-                SalesLine.Validate("Document Type", SalesHeader."Document Type");
-                SalesLine.Validate("Document No.", SalesHeader."No.");
-                SalesLine.Validate("Line No.", LineNo);
-                SalesLine.Validate(Type, SalesLine.Type::Item);
-                SalesLine.Validate("No.", SalesInvoiceLine."No.");
-
-                if SalesInvoiceLine."Variant Code" <> '' then
-                    SalesLine.Validate("Variant Code", SalesInvoiceLine."Variant Code");
-
-                if SalesInvoiceLine."Unit of Measure Code" <> '' then
-                    SalesLine.Validate("Unit of Measure Code", SalesInvoiceLine."Unit of Measure Code");
-
-                if SalesInvoiceLine."Location Code" <> '' then
-                    SalesLine.Validate(
-                        "Location Code",
-                        SalesInvoiceLine."Location Code")
-                else
-                    SalesLine.Validate(
-                        "Location Code",
-                        ShopifySetup."BC Location Code");
-                SalesLine.Validate(Quantity, RefundLine.Quantity);
-                SalesLine.Validate("Unit Price", SalesInvoiceLine."Unit Price");
-
-                if SalesInvoiceLine."Line Discount %" <> 0 then
-                    SalesLine.Validate("Line Discount %", SalesInvoiceLine."Line Discount %");
-
-                if Item.Get(SalesInvoiceLine."No.") and
-                   (Item.Type = Item.Type::Inventory)
-                then begin
-                    if (SalesInvoiceLine."Shipment No." = '') or
-                       (SalesInvoiceLine."Shipment Line No." = 0)
-                    then
-                        Error(
-                            'Exact cost reversal cannot be established for refunded inventory item %1 because the posted invoice line has no shipment reference.',
-                            SalesInvoiceLine."No.");
-
-                    if not SalesShipmentLine.Get(
-                        SalesInvoiceLine."Shipment No.",
-                        SalesInvoiceLine."Shipment Line No.")
-                    then
-                        Error(
-                            'Posted shipment line %1/%2 for refunded item %3 does not exist.',
-                            SalesInvoiceLine."Shipment No.",
-                            SalesInvoiceLine."Shipment Line No.",
-                            SalesInvoiceLine."No.");
-
-                    if SalesShipmentLine."Item Shpt. Entry No." = 0 then
-                        Error(
-                            'Posted shipment line %1/%2 has no Item Shipment Entry number required for exact cost reversal.',
-                            SalesInvoiceLine."Shipment No.",
-                            SalesInvoiceLine."Shipment Line No.");
-
-                    SalesLine.Validate(
-                        "Appl.-from Item Entry",
-                        SalesShipmentLine."Item Shpt. Entry No.");
-                end;
-
-                SalesLine.Insert(true);
+                InsertRefundItemLines(SalesHeader, SalesInvoiceLine, RefundLine, LineNo);
             until RefundLine.Next() = 0;
 
         if RefundEntry."Shipping Refund Amount" > 0.02 then begin
@@ -1205,6 +1139,90 @@ codeunit 50277 "Shopify Refund Mgt."
             SalesLine.Validate(Description, 'Shopify shipping refund');
             SalesLine.Insert(true);
         end;
+    end;
+
+    local procedure InsertRefundItemLines(
+        SalesHeader: Record "Sales Header";
+        SalesInvoiceLine: Record "Sales Invoice Line";
+        RefundLine: Record "Shopify Refund Line";
+        var LineNo: Integer)
+    var
+        Item: Record Item;
+        TempItemEntry: Record "Item Ledger Entry" temporary;
+        RemainingBase: Decimal;
+        QuantityBase: Decimal;
+        QtyPerUOM: Decimal;
+    begin
+        if not Item.Get(SalesInvoiceLine."No.") then
+            Error('Refund item %1 does not exist.', SalesInvoiceLine."No.");
+        if Item.Type <> Item.Type::Inventory then begin
+            InsertRefundItemLine(SalesHeader, SalesInvoiceLine, RefundLine,
+                RefundLine.Quantity, 0, LineNo);
+            exit;
+        end;
+
+        QtyPerUOM := SalesInvoiceLine."Qty. per Unit of Measure";
+        if QtyPerUOM = 0 then
+            QtyPerUOM := 1;
+        RemainingBase := RefundLine.Quantity * QtyPerUOM;
+        // This standard method follows invoice Value Entries, including orders
+        // posted using Ship and Invoice with blank shipment fields on the invoice.
+        SalesInvoiceLine.GetItemLedgEntries(TempItemEntry, true);
+        if TempItemEntry.FindSet() then
+            repeat
+                if (RemainingBase > 0) and (TempItemEntry.Quantity < 0) then begin
+                    QuantityBase := Abs(TempItemEntry.Quantity);
+                    if QuantityBase > Abs(TempItemEntry."Shipped Qty. Not Returned") then
+                        QuantityBase := Abs(TempItemEntry."Shipped Qty. Not Returned");
+                    if QuantityBase > RemainingBase then
+                        QuantityBase := RemainingBase;
+                    if QuantityBase > 0 then begin
+                        InsertRefundItemLine(SalesHeader, SalesInvoiceLine, RefundLine,
+                            QuantityBase / QtyPerUOM, TempItemEntry."Entry No.", LineNo);
+                        RemainingBase -= QuantityBase;
+                    end;
+                end;
+            until (TempItemEntry.Next() = 0) or (RemainingBase = 0);
+        if RemainingBase <> 0 then
+            Error('Cannot reverse the exact cost for invoice %1 line %2. Unmatched return quantity (base): %3.',
+                SalesInvoiceLine."Document No.", SalesInvoiceLine."Line No.", RemainingBase);
+    end;
+
+    local procedure InsertRefundItemLine(
+        SalesHeader: Record "Sales Header";
+        SalesInvoiceLine: Record "Sales Invoice Line";
+        RefundLine: Record "Shopify Refund Line";
+        Quantity: Decimal;
+        ItemEntryNo: Integer;
+        var LineNo: Integer)
+    var
+        SalesLine: Record "Sales Line";
+        ReturnLocationCode: Code[10];
+    begin
+        LineNo += 10000;
+        SalesLine.Init();
+        SalesLine.Validate("Document Type", SalesHeader."Document Type");
+        SalesLine.Validate("Document No.", SalesHeader."No.");
+        SalesLine."Line No." := LineNo;
+        SalesLine.Validate(Type, SalesLine.Type::Item);
+        SalesLine.Validate("No.", SalesInvoiceLine."No.");
+        SalesLine.Validate("Variant Code", SalesInvoiceLine."Variant Code");
+        SalesLine.Validate("Unit of Measure Code", SalesInvoiceLine."Unit of Measure Code");
+        ReturnLocationCode := RefundLine."BC Return Location Code";
+        if ReturnLocationCode = '' then
+            ReturnLocationCode := SalesInvoiceLine."Location Code";
+        SalesLine.Validate("Location Code", ReturnLocationCode);
+        SalesLine.Validate(Quantity, Quantity);
+        SalesLine.Validate("Gen. Bus. Posting Group", SalesInvoiceLine."Gen. Bus. Posting Group");
+        SalesLine.Validate("Gen. Prod. Posting Group", SalesInvoiceLine."Gen. Prod. Posting Group");
+        SalesLine.Validate("VAT Bus. Posting Group", SalesInvoiceLine."VAT Bus. Posting Group");
+        SalesLine.Validate("VAT Prod. Posting Group", SalesInvoiceLine."VAT Prod. Posting Group");
+        SalesLine.Validate("Dimension Set ID", SalesInvoiceLine."Dimension Set ID");
+        SalesLine.Validate("Unit Price", SalesInvoiceLine."Unit Price");
+        SalesLine.Validate("Line Discount %", SalesInvoiceLine."Line Discount %");
+        if ItemEntryNo <> 0 then
+            SalesLine.Validate("Appl.-from Item Entry", ItemEntryNo);
+        SalesLine.Insert(true);
     end;
 
     local procedure GetOriginalInvoicedShippingAmount(

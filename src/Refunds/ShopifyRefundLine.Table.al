@@ -93,6 +93,12 @@ table 50272 "Shopify Refund Line"
             Caption = 'Posted Invoice Line No.';
             DataClassification = SystemMetadata;
         }
+        field(140; "BC Return Location Code"; Code[10])
+        {
+            Caption = 'BC Return Location Code';
+            TableRelation = Location.Code;
+            DataClassification = CustomerContent;
+        }
     }
 
     keys

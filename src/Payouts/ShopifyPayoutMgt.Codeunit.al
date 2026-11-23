@@ -305,9 +305,6 @@ codeunit 50260 "Shopify Payout Mgt."
         PayoutId: Text;
         StartedAt: DateTime;
     begin
-        ValidatePayoutForPosting(
-            PayoutEntry);
-
         if PayoutEntry."Processing Status" =
            PayoutEntry."Processing Status"::Success
         then begin

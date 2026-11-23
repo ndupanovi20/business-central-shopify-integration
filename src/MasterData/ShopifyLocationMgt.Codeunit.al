@@ -155,6 +155,24 @@ codeunit 50297 "Shopify Location Mgt."
         exit(Mapping."Shopify Location ID");
     end;
 
+    procedure TryResolveBCLocation(ShopifyLocationId: Text; var BCLocationCode: Code[10]): Boolean
+    var
+        ShopifySetup: Record "Shopify Integration Setup";
+        Location: Record Location;
+    begin
+        Clear(BCLocationCode);
+        GetSetup(ShopifySetup);
+        if ShopifySetup."Use Location Mappings" then begin
+            if not TryGetBCLocationCode(ShopifyLocationId, BCLocationCode) then
+                exit(false);
+        end else begin
+            if (ShopifyLocationId = '') or (ShopifyLocationId <> ShopifySetup."Shopify Location ID") then
+                exit(false);
+            BCLocationCode := ShopifySetup."BC Location Code";
+        end;
+        exit((BCLocationCode <> '') and Location.Get(BCLocationCode));
+    end;
+
     procedure SyncInventoryForItem(
         Item: Record Item;
         ShopifyInventoryItemId: Text): Integer

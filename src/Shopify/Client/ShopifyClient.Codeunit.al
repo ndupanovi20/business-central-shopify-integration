@@ -36,7 +36,12 @@ codeunit 50110 "Shopify Client"
         ResponseText: Text;
         GraphQLUrl: Text;
         GraphQLErrorText: Text;
+        IsHandled: Boolean;
     begin
+        OnBeforeExecuteGraphQL(QueryText, Variables, ResponseJson, IsHandled);
+        if IsHandled then
+            exit;
+
         if not ShopifySetup.Get(
             'SETUP')
         then
@@ -688,4 +693,9 @@ codeunit 50110 "Shopify Client"
                 MaximumLength) +
             '...');
     end;
+    [IntegrationEvent(false, false)]
+    local procedure OnBeforeExecuteGraphQL(QueryText: Text; Variables: JsonObject; var ResponseJson: JsonObject; var IsHandled: Boolean)
+    begin
+    end;
+
 }
